@@ -4,7 +4,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     this.attachShadow({ mode: 'open' });
 
     this.config = {};
-    this.hass = null;
+    this._hass = null;
     this.currentTab = 'overview';
 
     // Data storage
@@ -15,6 +15,11 @@ class HAAutomationAnalyzer extends HTMLElement {
     this.failedAutomations = new Map();
     this.disabledAutomations = [];
     this.suggestions = [];
+    // Stable random data cache - keyed by entity id
+    this._stableRandom = new Map();
+    this._sparklineData = null;
+    this._dataInitialized = false;
+    this._lastEntityList = '';
   }
 
   setConfig(config) {
@@ -26,12 +31,106 @@ class HAAutomationAnalyzer extends HTMLElement {
   }
 
   set hass(hass) {
-    this.hass = hass;
+    this._hass = hass;
+    if (!hass) return;
+    // Throttle: only re-render every 5s
+    const now = Date.now();
+    if (!this._firstHassRender) {
+      this._firstHassRender = true;
+      this.updateAutomationData();
+      this.render();
+      this._lastRenderTime = now;
+      return;
+    }
+    if (now - (this._lastRenderTime || 0) < 5000) {
+      if (!this._renderScheduled) {
+        this._renderScheduled = true;
+        setTimeout(() => {
+          this._renderScheduled = false;
+          this.updateAutomationData();
+          this.render();
+          this._lastRenderTime = Date.now();
+        }, 5000 - (now - (this._lastRenderTime || 0)));
+      }
+      return;
+    }
     this.updateAutomationData();
+    this.render();
+    this._lastRenderTime = now;
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  // Simple seeded random for stable values per entity
+  _seededRandom(seed) {
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) {
+      h = Math.imul(31, h) + seed.charCodeAt(i) | 0;
+    }
+    return () => {
+      h = Math.imul(h ^ (h >>> 16), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      h ^= h >>> 16;
+      return (h >>> 0) / 4294967296;
+    };
+  }
+
+  _getStableData(entity) {
+    if (!this._stableRandom.has(entity)) {
+      const rng = this._seededRandom(entity);
+      const triggers = ['state', 'time', 'event', 'webhook', 'template'];
+      const execTime = rng() * 1500 + 10;
+      const triggerType = triggers[Math.floor(rng() * triggers.length)];
+      const failureRate = rng() * 5;
+      const timesTriggeredToday = Math.floor(rng() * 50);
+      const totalActions = Math.floor(rng() * 8) + 1;
+      const conditions = Math.floor(rng() * 5);
+      const isFailed = rng() > 0.85;
+      const history = [];
+      for (let i = 0; i < 5; i++) {
+        const success = rng() > 0.1;
+        history.push({
+          success,
+          histExecTime: rng() * 1000
+        });
+      }
+      this._stableRandom.set(entity, {
+        execTime, triggerType, failureRate, timesTriggeredToday,
+        totalActions, conditions, isFailed, history,
+        failLastOffset: rng() * 86400000,
+        failRate: 2 + rng() * 10,
+        lastTriggeredOffset: rng() * 86400000
+      });
+    }
+    return this._stableRandom.get(entity);
   }
 
   updateAutomationData() {
     if (!this.hass) return;
+
+    // Check if entity list changed - only regenerate if it did
+    const automations = Object.entries(this.hass.states)
+      .filter(([entity]) => entity.startsWith('automation.'));
+    const entityKey = automations.map(([e]) => e).sort().join(',');
+
+    if (this._dataInitialized && entityKey === this._lastEntityList) {
+      // Only update active/inactive states, keep stable data
+      automations.forEach(([entity, state]) => {
+        const existing = this.automationStats.get(entity);
+        if (existing) {
+          existing.isActive = state.state === 'on';
+        }
+      });
+      this.disabledAutomations = automations
+        .filter(([, state]) => state.state !== 'on' && this.config.show_disabled)
+        .map(([entity]) => ({ name: entity.replace('automation.', ''), entity }));
+      return;
+    }
+
+    this._lastEntityList = entityKey;
+    this._dataInitialized = true;
 
     this.automationStats.clear();
     this.automationHistory = [];
@@ -40,67 +139,57 @@ class HAAutomationAnalyzer extends HTMLElement {
     this.failedAutomations.clear();
     this.disabledAutomations = [];
 
-    const automations = Object.entries(this.hass.states)
-      .filter(([entity]) => entity.startsWith('automation.'));
-
     automations.forEach(([entity, state]) => {
       const name = entity.replace('automation.', '');
       const isActive = state.state === 'on';
+      const d = this._getStableData(entity);
 
       if (!isActive && this.config.show_disabled) {
         this.disabledAutomations.push({ name, entity });
       }
 
-      // Generate demo data if not available in attributes
-      const execTime = Math.random() * 1500 + 10;
-      const lastTriggered = new Date(Date.now() - Math.random() * 86400000);
-      const triggers = ['state', 'time', 'event', 'webhook', 'template'];
-      const triggerType = triggers[Math.floor(Math.random() * triggers.length)];
-
       this.automationStats.set(entity, {
         name,
         isActive,
-        execTime,
-        lastTriggered,
-        triggerType,
-        failureRate: Math.random() * 5,
-        timesTriggeredToday: Math.floor(Math.random() * 50),
-        totalActions: Math.floor(Math.random() * 8) + 1,
-        conditions: Math.floor(Math.random() * 5)
+        execTime: d.execTime,
+        lastTriggered: new Date(Date.now() - d.lastTriggeredOffset),
+        triggerType: d.triggerType,
+        failureRate: d.failureRate,
+        timesTriggeredToday: d.timesTriggeredToday,
+        totalActions: d.totalActions,
+        conditions: d.conditions
       });
 
-      this.executionTimes.push(execTime);
+      this.executionTimes.push(d.execTime);
       this.triggerTypes.set(
-        triggerType,
-        (this.triggerTypes.get(triggerType) || 0) + 1
+        d.triggerType,
+        (this.triggerTypes.get(d.triggerType) || 0) + 1
       );
 
-      // Generate history
-      for (let i = 0; i < 5; i++) {
-        const success = Math.random() > 0.1;
+      // Generate history from stable data
+      d.history.forEach((h, i) => {
         this.automationHistory.push({
           name,
           entity,
           time: new Date(Date.now() - i * 3600000),
-          status: success ? 'success' : 'error',
-          execTime: Math.random() * 1000,
-          message: success ? 'Executed successfully' : 'Execution failed'
+          status: h.success ? 'success' : 'error',
+          execTime: h.histExecTime,
+          message: h.success ? 'Executed successfully' : 'Execution failed'
         });
-      }
+      });
 
       // Failed automations
-      if (Math.random() > 0.85) {
+      if (d.isFailed) {
         this.failedAutomations.set(entity, {
           name,
-          lastFailure: new Date(Date.now() - Math.random() * 86400000),
-          failureRate: 2 + Math.random() * 10,
+          lastFailure: new Date(Date.now() - d.failLastOffset),
+          failureRate: d.failRate,
           error: 'Service call failed: light.turn_on'
         });
       }
     });
 
     this.generateSuggestions();
-    this.render();
   }
 
   generateSuggestions() {
@@ -174,7 +263,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     const topAutomations = this.getTopAutomations(5);
 
     return `
-      <div class="tab-content">
+      <div class="tab-content active">
         <div class="summary-grid">
           <div class="summary-card">
             <div class="summary-label">Total Automations</div>
@@ -225,7 +314,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     const triggerData = this.getTriggerTypeData();
 
     return `
-      <div class="tab-content">
+      <div class="tab-content active">
         <div class="section">
           <h3>Execution Time Distribution</h3>
           <canvas id="exec-dist-chart" width="400" height="200"></canvas>
@@ -268,11 +357,11 @@ class HAAutomationAnalyzer extends HTMLElement {
     ];
 
     const staleAutomations = Array.from(this.automationStats.values())
-      .filter(() => Math.random() > 0.7)
+      .filter((a) => a.timesTriggeredToday < 5)
       .slice(0, 3);
 
     return `
-      <div class="tab-content">
+      <div class="tab-content active">
         ${this.failedAutomations.size > 0 ? `
           <div class="section">
             <h3>Failed Automations</h3>
@@ -342,7 +431,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     })).slice(0, 5);
 
     return `
-      <div class="tab-content">
+      <div class="tab-content active">
         <div class="section">
           <h3>Optimization Suggestions</h3>
           <div class="suggestions-list">
@@ -429,6 +518,7 @@ class HAAutomationAnalyzer extends HTMLElement {
           padding: 16px;
           border-radius: 4px;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          min-height: 500px;
         }
 
         .card-header {
@@ -770,7 +860,9 @@ class HAAutomationAnalyzer extends HTMLElement {
 
         canvas {
           max-width: 100%;
-          height: auto;
+          height: auto !important;
+          width: auto !important;
+          border: none !important;
         }
       
 /* === Modern Bento Light Mode === */
@@ -1130,9 +1222,18 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
     }
   }
 
+  _fixCanvasSize(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    }
+  }
+
   drawTopAutomationsChart() {
     const canvas = this.shadowRoot.getElementById('top-automations-chart');
     if (!canvas) return;
+    this._fixCanvasSize(canvas);
 
     const ctx = canvas.getContext('2d');
     const data = this.getTopAutomations(5);
@@ -1140,29 +1241,31 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
     const barHeight = 30;
     const padding = 40;
     const maxValue = Math.max(...data.map(a => a.timesTriggeredToday), 1);
+    const chartWidth = canvas.width - padding - 60;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = getComputedStyle(this).getPropertyValue('--text-color');
-    ctx.font = '12px sans-serif';
+    ctx.font = '12px Inter, sans-serif';
 
     data.forEach((automation, i) => {
       const y = i * barHeight + padding;
-      const barWidth = (automation.timesTriggeredToday / maxValue) * 300;
+      const barWidth = (automation.timesTriggeredToday / maxValue) * Math.max(chartWidth - 100, 100);
+      const shortName = automation.name.length > 12 ? automation.name.substring(0, 12) + '…' : automation.name;
 
-      ctx.fillStyle = getComputedStyle(this).getPropertyValue('--primary-color') || '#3498db';
-      ctx.fillRect(padding + 50, y, barWidth, 20);
+      ctx.fillStyle = '#3B82F6';
+      ctx.fillRect(padding + 80, y, barWidth, 20);
 
-      ctx.fillStyle = getComputedStyle(this).getPropertyValue('--text-color') || '#212121';
+      ctx.fillStyle = '#1E293B';
       ctx.textAlign = 'right';
-      ctx.fillText(automation.name, padding + 45, y + 15);
+      ctx.fillText(shortName, padding + 75, y + 15);
       ctx.textAlign = 'left';
-      ctx.fillText(automation.timesTriggeredToday, padding + 55 + barWidth, y + 15);
+      ctx.fillText(automation.timesTriggeredToday, padding + 85 + barWidth, y + 15);
     });
   }
 
   drawExecutionDistributionChart() {
     const canvas = this.shadowRoot.getElementById('exec-dist-chart');
     if (!canvas) return;
+    this._fixCanvasSize(canvas);
 
     const ctx = canvas.getContext('2d');
     const distribution = this.getExecutionDistribution();
@@ -1170,32 +1273,35 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
     const values = Object.values(distribution);
     const maxValue = Math.max(...values, 1);
 
-    const barWidth = 60;
     const padding = 40;
     const spacing = (canvas.width - 2 * padding) / labels.length;
+    const barWidth = Math.min(60, spacing * 0.7);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     labels.forEach((label, i) => {
       const value = values[i];
-      const barHeight = (value / maxValue) * (canvas.height - 2 * padding);
+      const barHeight = (value / maxValue) * (canvas.height - 2 * padding - 20);
       const x = padding + i * spacing + spacing / 2 - barWidth / 2;
       const y = canvas.height - padding - barHeight;
 
-      ctx.fillStyle = getComputedStyle(this).getPropertyValue('--primary-color') || '#3498db';
+      ctx.fillStyle = '#3B82F6';
       ctx.fillRect(x, y, barWidth, barHeight);
 
-      ctx.fillStyle = getComputedStyle(this).getPropertyValue('--text-color') || '#212121';
-      ctx.font = '12px sans-serif';
+      ctx.fillStyle = '#1E293B';
+      ctx.font = '12px Inter, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(value, x + barWidth / 2, canvas.height - padding + 15);
-      ctx.fillText(label, x + barWidth / 2, canvas.height - 15);
+      ctx.fillText(value, x + barWidth / 2, y - 5);
+      ctx.fillStyle = '#64748B';
+      ctx.font = '11px Inter, sans-serif';
+      ctx.fillText(label, x + barWidth / 2, canvas.height - 10);
     });
   }
 
   drawTriggerTypeChart() {
     const canvas = this.shadowRoot.getElementById('trigger-type-chart');
     if (!canvas) return;
+    this._fixCanvasSize(canvas);
 
     const ctx = canvas.getContext('2d');
     const data = this.getTriggerTypeData();
@@ -1203,8 +1309,8 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
 
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
-    const radius = 80;
-    const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6'];
+    const radius = Math.min(centerX, centerY) - 30;
+    const colors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'];
 
     let currentAngle = -Math.PI / 2;
 
@@ -1220,60 +1326,88 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
       ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      const textAngle = currentAngle + sliceAngle / 2;
-      const textX = centerX + Math.cos(textAngle) * (radius * 0.7);
-      const textY = centerY + Math.sin(textAngle) * (radius * 0.7);
-      ctx.fillText(item.type, textX, textY);
+      // Labels
+      if (sliceAngle > 0.3) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const textAngle = currentAngle + sliceAngle / 2;
+        const textX = centerX + Math.cos(textAngle) * (radius * 0.65);
+        const textY = centerY + Math.sin(textAngle) * (radius * 0.65);
+        ctx.fillText(item.type, textX, textY);
+      }
 
       currentAngle += sliceAngle;
+    });
+
+    // Legend below
+    ctx.font = '11px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const legendY = centerY + radius + 15;
+    let legendX = 10;
+    data.forEach((item, i) => {
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fillRect(legendX, legendY, 10, 10);
+      ctx.fillStyle = '#64748B';
+      ctx.fillText(`${item.type} (${item.count})`, legendX + 14, legendY);
+      legendX += ctx.measureText(`${item.type} (${item.count})`).width + 24;
     });
   }
 
   drawSparklineChart() {
     const canvas = this.shadowRoot.getElementById('sparkline-chart');
     if (!canvas) return;
+    this._fixCanvasSize(canvas);
 
     const ctx = canvas.getContext('2d');
-    const data = Array.from({ length: 14 }, () => Math.floor(Math.random() * 100));
+    if (!this._sparklineData) {
+      const rng = this._seededRandom('sparkline-daily-exec');
+      this._sparklineData = Array.from({ length: 14 }, () => Math.floor(rng() * 100));
+    }
+    const data = this._sparklineData;
     const maxValue = Math.max(...data, 1);
-    const minValue = 0;
 
-    const padding = 10;
+    const padding = 20;
     const graphWidth = canvas.width - 2 * padding;
     const graphHeight = canvas.height - 2 * padding;
     const pointSpacing = graphWidth / (data.length - 1);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw line
-    ctx.strokeStyle = getComputedStyle(this).getPropertyValue('--primary-color') || '#3498db';
-    ctx.lineWidth = 2;
+    // Fill area under curve
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.08)';
     ctx.beginPath();
-
+    ctx.moveTo(padding, canvas.height - padding);
     data.forEach((value, i) => {
       const x = padding + i * pointSpacing;
       const y = canvas.height - padding - (value / maxValue) * graphHeight;
-
-      if (i === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
-      }
+      ctx.lineTo(x, y);
     });
+    ctx.lineTo(padding + (data.length - 1) * pointSpacing, canvas.height - padding);
+    ctx.closePath();
+    ctx.fill();
 
+    // Draw line
+    ctx.strokeStyle = '#3B82F6';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    data.forEach((value, i) => {
+      const x = padding + i * pointSpacing;
+      const y = canvas.height - padding - (value / maxValue) * graphHeight;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
     ctx.stroke();
 
     // Draw points
-    ctx.fillStyle = getComputedStyle(this).getPropertyValue('--primary-color') || '#3498db';
+    ctx.fillStyle = '#3B82F6';
     data.forEach((value, i) => {
       const x = padding + i * pointSpacing;
       const y = canvas.height - padding - (value / maxValue) * graphHeight;
-
       ctx.beginPath();
-      ctx.arc(x, y, 2, 0, 2 * Math.PI);
+      ctx.arc(x, y, 3, 0, 2 * Math.PI);
       ctx.fill();
     });
   }
