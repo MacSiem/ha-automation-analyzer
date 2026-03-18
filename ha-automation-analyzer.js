@@ -1,4 +1,4 @@
-class HAAutomationAnalyzer extends HTMLElement {
+﻿class HAAutomationAnalyzer extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
@@ -35,7 +35,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       this._lastRenderTime = now;
       return;
     }
-    if (now - (this._lastRenderTime || 0) < 5000) {
+    if (now - (this._lastRenderTime || 0) < 10000) {
       if (!this._renderScheduled) {
         this._renderScheduled = true;
         setTimeout(() => {
