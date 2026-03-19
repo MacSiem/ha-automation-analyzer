@@ -1,4 +1,4 @@
-﻿class HAAutomationAnalyzer extends HTMLElement {
+class HAAutomationAnalyzer extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
@@ -167,6 +167,18 @@
       .sort((a, b) => b.count - a.count);
   }
 
+  getOptimizationData() {
+    const slow = Array.from(this.automationStats.values())
+      .filter(a => a.avgExecutionTime > 800)
+      .sort((a, b) => b.avgExecutionTime - a.avgExecutionTime)
+      .slice(0, 10);
+    const failed = Array.from(this.automationStats.values())
+      .filter(a => a.isFailed)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const disabled = this.disabledAutomations.slice(0, 15);
+    return { slow, failed, disabled };
+  }
+
   render() {
     const styles = `
       :host { --bento-bg: #f8fafc; --bento-text: #1e293b; --bento-border: #e2e8f0; --bento-radius-sm: 8px; --bento-primary: #3b82f6; }
@@ -208,6 +220,27 @@
       .stat { background: #f1f5f9; padding: 12px; border-radius: var(--bento-radius-sm); text-align: center; }
       .stat-value { font-size: 20px; font-weight: 600; color: var(--bento-primary); }
       .stat-label { font-size: 12px; color: #64748b; margin-top: 4px; }
+      .opt-section { margin-bottom: 20px; }
+      .opt-section .chart-title { margin-bottom: 10px; }
+      .suggest-list { display: flex; flex-direction: column; gap: 6px; }
+      .suggest-item { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; background: var(--bento-card, #ffffff); border: 1px solid var(--bento-border); border-radius: var(--bento-radius-sm); gap: 8px; }
+      .suggest-name { font-size: 13px; font-weight: 500; color: var(--bento-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .suggest-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; flex-shrink: 0; }
+      .badge-warn { background: #fef3c7; color: #92400e; }
+      .badge-error { background: #fee2e2; color: #991b1b; }
+      .badge-info { background: #dbeafe; color: #1e40af; }
+      .badge-ok { background: #d1fae5; color: #065f46; }
+      .empty-state { text-align: center; padding: 24px 16px; color: #64748b; font-size: 13px; background: var(--bento-card, #f8fafc); border: 1px solid var(--bento-border); border-radius: var(--bento-radius-sm); }
+      .opt-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+      .opt-stat { padding: 12px; border-radius: var(--bento-radius-sm); text-align: center; }
+      .opt-stat.warn { background: #fef3c7; border: 1px solid #fcd34d; }
+      .opt-stat.error { background: #fee2e2; border: 1px solid #fca5a5; }
+      .opt-stat.info { background: #dbeafe; border: 1px solid #93c5fd; }
+      .opt-stat-value { font-size: 22px; font-weight: 700; }
+      .opt-stat.warn .opt-stat-value { color: #92400e; }
+      .opt-stat.error .opt-stat-value { color: #991b1b; }
+      .opt-stat.info .opt-stat-value { color: #1e40af; }
+      .opt-stat-label { font-size: 11px; color: #64748b; margin-top: 3px; }
     `;
     const topAutos = this.getTopAutomations(5);
     const stats = {
@@ -242,6 +275,56 @@
         <canvas id="sparkline-chart" width="300" height="100"></canvas>
       </div>
     `;
+    const optData = this.getOptimizationData();
+    const slowItems = optData.slow.length > 0
+      ? optData.slow.map(a => `
+          <div class="suggest-item">
+            <span class="suggest-name" title="${a.name}">${a.name}</span>
+            <span class="suggest-badge badge-warn">${Math.round(a.avgExecutionTime)}ms</span>
+          </div>`).join("")
+      : `<div class="empty-state">\u2705 Brak wolnych automatyzacji</div>`;
+    const failedItems = optData.failed.length > 0
+      ? optData.failed.map(a => `
+          <div class="suggest-item">
+            <span class="suggest-name" title="${a.name}">${a.name}</span>
+            <span class="suggest-badge badge-error">b\u0142\u0105d</span>
+          </div>`).join("")
+      : `<div class="empty-state">\u2705 Brak nieudanych automatyzacji</div>`;
+    const disabledItems = optData.disabled.length > 0
+      ? optData.disabled.map(a => `
+          <div class="suggest-item">
+            <span class="suggest-name" title="${a.name}">${a.name}</span>
+            <span class="suggest-badge badge-info">wy\u0142\u0105czona</span>
+          </div>`).join("")
+      : `<div class="empty-state">\u2705 Brak wy\u0142\u0105czonych automatyzacji</div>`;
+    const optimizationContent = `
+      <div class="opt-summary">
+        <div class="opt-stat warn">
+          <div class="opt-stat-value">${optData.slow.length}</div>
+          <div class="opt-stat-label">Wolnych (&gt;800ms)</div>
+        </div>
+        <div class="opt-stat error">
+          <div class="opt-stat-value">${optData.failed.length}</div>
+          <div class="opt-stat-label">Nieudanych</div>
+        </div>
+        <div class="opt-stat info">
+          <div class="opt-stat-value">${optData.disabled.length}</div>
+          <div class="opt-stat-label">Wy\u0142\u0105czonych</div>
+        </div>
+      </div>
+      <div class="opt-section">
+        <h2 class="chart-title">\u26a1 Wolne automatyzacje (&gt;800ms)</h2>
+        <div class="suggest-list">${slowItems}</div>
+      </div>
+      <div class="opt-section">
+        <h2 class="chart-title">\u274c Nieudane automatyzacje</h2>
+        <div class="suggest-list">${failedItems}</div>
+      </div>
+      <div class="opt-section">
+        <h2 class="chart-title">\u23f8\ufe0f Wy\u0142\u0105czone automatyzacje</h2>
+        <div class="suggest-list">${disabledItems}</div>
+      </div>
+    `;
     this.shadowRoot.innerHTML = `
       <style>${styles}</style>
       <div class="container">
@@ -252,9 +335,11 @@
         <div class="tabs">
           <button class="tab-button ${this.currentTab === "overview" ? "active" : ""}" data-tab="overview">Overview</button>
           <button class="tab-button ${this.currentTab === "performance" ? "active" : ""}" data-tab="performance">Performance</button>
+          <button class="tab-button ${this.currentTab === "optimization" ? "active" : ""}" data-tab="optimization">Optymalizacja</button>
         </div>
         <div class="tab-content ${this.currentTab === "overview" ? "active" : ""}">${overviewContent}</div>
         <div class="tab-content ${this.currentTab === "performance" ? "active" : ""}">${performanceContent}</div>
+        <div class="tab-content ${this.currentTab === "optimization" ? "active" : ""}">${optimizationContent}</div>
       </div>
     `;
     this.setupEventListeners();
@@ -271,6 +356,7 @@
   }
 
   async drawCharts() {
+    if (this.currentTab === "optimization") return;
     try {
       await this._loadChartJS();
       if (this.currentTab === "overview") {
@@ -292,7 +378,7 @@
       this._charts["top-automations"].destroy();
     }
     const data = this.getTopAutomations(5);
-    const labels = data.map(a => a.name.length > 12 ? a.name.substring(0, 12) + "…" : a.name);
+    const labels = data.map(a => a.name.length > 12 ? a.name.substring(0, 12) + "\u2026" : a.name);
     const values = data.map(a => a.timesTriggeredToday);
     const ctx = canvas.getContext("2d");
     this._charts["top-automations"] = new window.Chart(ctx, {
