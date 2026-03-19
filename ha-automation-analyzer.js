@@ -170,6 +170,25 @@
   render() {
     const styles = `
       :host { --bento-bg: #f8fafc; --bento-text: #1e293b; --bento-border: #e2e8f0; --bento-radius-sm: 8px; --bento-primary: #3b82f6; }
+@media (prefers-color-scheme: dark) {
+  :host {
+    --bento-bg: #1a1a2e;
+    --bento-card: #16213e;
+    --bento-text: #e2e8f0;
+    --bento-text-secondary: #94a3b8;
+    --bento-border: #334155;
+    --bento-success: #34d399;
+    --bento-warning: #fbbf24;
+    --bento-error: #f87171;
+  }
+}
+:host-context([data-themes]) {
+  --bento-bg: var(--lovelace-background, var(--primary-background-color, #F8FAFC));
+  --bento-card: var(--card-background-color, var(--ha-card-background, #FFFFFF));
+  --bento-text: var(--primary-text-color, #1E293B);
+  --bento-text-secondary: var(--secondary-text-color, #64748B);
+  --bento-border: var(--divider-color, #E2E8F0);
+}
       * { margin: 0; padding: 0; box-sizing: border-box; }
       .container { padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: var(--bento-bg); color: var(--bento-text); }
       .header { margin-bottom: 24px; }
