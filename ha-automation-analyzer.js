@@ -181,9 +181,9 @@
       .tab-button:hover { color: var(--bento-text); }
       .tab-content { display: none; }
       .tab-content.active { display: block; }
-      .chart-container { background: white; border-radius: var(--bento-radius-sm); padding: 16px; border: 1px solid var(--bento-border); margin-bottom: 16px; }
+      .chart-container { background: white; border-radius: var(--bento-radius-sm); padding: 16px; border: 1px solid var(--bento-border); margin-bottom: 16px; position: relative; }
       .chart-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--bento-text); }
-      canvas { width: 100%; height: 200px; border: 1px solid var(--bento-border); border-radius: var(--bento-radius-sm); margin-bottom: 16px; }
+      canvas { width: 100% !important; max-height: 250px; border: 1px solid var(--bento-border); border-radius: var(--bento-radius-sm); margin-bottom: 16px; }
       .canvas-container { position: relative; margin-bottom: 16px; }
       .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 16px; }
       .stat { background: #f1f5f9; padding: 12px; border-radius: var(--bento-radius-sm); text-align: center; }
