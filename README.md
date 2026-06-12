@@ -4,16 +4,19 @@
 
 Analyze your Home Assistant automations — failures, hot spots, traces.
 
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue.svg?logo=homeassistant)](https://www.home-assistant.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Version](https://img.shields.io/badge/Version-4.0.0-success.svg)](#changelog)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue.svg?logo=homeassistant)](https://www.home-assistant.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Version](https://img.shields.io/badge/Version-4.1.5-success.svg)](#changelog)
 
 > Part of the [HA Tools](https://github.com/MacSiem) ecosystem — split into individual HACS-installable plugins.
 
 ## Installation (HACS)
 
-1. Open HACS → Frontend → ⋮ → **Custom repositories**
-2. Repository URL: `https://github.com/MacSiem/ha-automation-analyzer` — Category: **Lovelace**
-3. Install **Automation Analyzer** from HACS
-4. Restart Home Assistant
+**Automation Analyzer is in the HACS default store** — no custom repository needed:
+
+1. Open **HACS** in Home Assistant
+2. Search for **Automation Analyzer**
+3. Install and refresh your browser
+
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=MacSiem&repository=ha-automation-analyzer&category=plugin)
 
 ## Usage
 
