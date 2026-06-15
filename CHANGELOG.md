@@ -1,5 +1,10 @@
 # Changelog — Automation Analyzer
 
+## [4.1.9] - 2026-06-15
+
+- Theme: dark/light now follows the active Home Assistant theme (luminance of --card-background-color) instead of OS prefers-color-scheme.
+
+
 ## [4.1.8] - 2026-06-15
 
 - Theme: dark/light now follows the active Home Assistant theme (luminance of --card-background-color) instead of OS prefers-color-scheme.

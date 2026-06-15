@@ -1,4 +1,4 @@
-/* HA Tools split — ha-automation-analyzer v4.1.8 (2026-06-07) — single-tool standalone repo */
+/* HA Tools split — ha-automation-analyzer v4.1.9 (2026-06-07) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -730,6 +730,11 @@ class HAAutomationAnalyzer extends HTMLElement {
     // Pagination for optimization tab
     this._currentPage = {};
     this._pageSize = 15;
+    // Timeline tab state
+    this._selectedTimelineId = null;   // entity id (automation.xxx)
+    this._timelineData = null;         // fetched trace object
+    this._timelineError = null;        // error string or null
+    this._timelineLoading = false;     // true while fetching
   }
 
   setConfig(config) {
@@ -879,6 +884,18 @@ class HAAutomationAnalyzer extends HTMLElement {
         phaseLoadingHistory: 'Pobieranie historii wykonania...',
         systemHealth: 'Stan systemu automatyzacji',
         triggerTypesTitle: 'Typy wyzwalaczy',
+        tabTimeline: 'Oś czasu',
+        timelineTitle: 'Linia czasu automatyzacji',
+        timelineSelectPrompt: 'Wybierz automatyzację, aby zobaczyć jej ostatnią trasę wykonania.',
+        timelineLoadError: 'Nie można pobrać danych trasy.',
+        timelineNoTrace: 'Brak dostępnej trasy. Włącz śledzenie automatyzacji w konfiguracji HA.',
+        timelineLoading: 'Pobieranie trasy…',
+        timelinePass: 'OK',
+        timelineFail: 'Błąd',
+        timelineSkipped: 'Pominięto',
+        timelineChanged: 'Zmieniono',
+        timelineLastTriggered: 'Ostatnie uruchomienie',
+        timelineTracingTip: 'Włącz śledzenie: konfiguracja → automatyzacje → edytuj → włącz śledzenie.',
       },
       en: {
         title: 'Automation Analyzer',
@@ -979,6 +996,18 @@ class HAAutomationAnalyzer extends HTMLElement {
         phaseLoadingHistory: 'Fetching execution history...',
         systemHealth: 'Automation system health',
         triggerTypesTitle: 'Trigger Types',
+        tabTimeline: 'Timeline',
+        timelineTitle: 'Automation trace timeline',
+        timelineSelectPrompt: 'Select an automation to view its latest trace.',
+        timelineLoadError: 'Could not fetch trace data.',
+        timelineNoTrace: 'No trace available. Enable automation tracing in HA configuration.',
+        timelineLoading: 'Fetching trace…',
+        timelinePass: 'Pass',
+        timelineFail: 'Error',
+        timelineSkipped: 'Skipped',
+        timelineChanged: 'Changed',
+        timelineLastTriggered: 'Last triggered',
+        timelineTracingTip: 'Enable tracing: Configuration → Automations → Edit → enable tracing.',
       },
     };
     return T[this._lang] || T.en;
@@ -1579,6 +1608,132 @@ class HAAutomationAnalyzer extends HTMLElement {
     }
   }
 
+  async _fetchTimeline(entityId) {
+    // entityId is automation.xxx; we need the internal automation id for trace/get
+    const stats = this.automationStats.get(entityId);
+    const automationId = (stats && stats.automationId) ? stats.automationId : entityId.replace('automation.', '');
+    this._timelineLoading = true;
+    this._timelineData = null;
+    this._timelineError = null;
+    this.render();
+
+    try {
+      if (!this._hass || !this._hass.callWS) throw new Error('WS not available');
+
+      // Step 1: get list of traces for this automation (newest first)
+      let traceList = null;
+      try {
+        traceList = await this._hass.callWS({ type: 'trace/list', domain: 'automation', item_id: automationId });
+      } catch (e1) {
+        // Some HA versions use automation/trace/list
+        try {
+          traceList = await this._hass.callWS({ type: 'automation/trace/list', automation_id: automationId });
+        } catch (e2) { /* fall through */ }
+      }
+
+      if (!traceList || !Array.isArray(traceList) || traceList.length === 0) {
+        // No traces — show fallback with last_triggered info
+        this._timelineData = { empty: true, entityId, stats };
+        this._timelineLoading = false;
+        this.render();
+        return;
+      }
+
+      // Pick the latest trace (they come sorted newest first, but sort by timestamp.start to be safe)
+      const sorted = traceList.slice().sort((a, b) => {
+        const ta = (a.timestamp && a.timestamp.start) ? new Date(a.timestamp.start).getTime() : (a.timestamp ? new Date(a.timestamp).getTime() : 0);
+        const tb = (b.timestamp && b.timestamp.start) ? new Date(b.timestamp.start).getTime() : (b.timestamp ? new Date(b.timestamp).getTime() : 0);
+        return tb - ta;
+      });
+      const latest = sorted[0];
+      const traceId = latest.run_id || latest.trace_id;
+
+      // Step 2: fetch the full trace with path data
+      let fullTrace = null;
+      try {
+        fullTrace = await this._hass.callWS({ type: 'trace/get', domain: 'automation', item_id: automationId, run_id: traceId });
+      } catch (e3) {
+        try {
+          fullTrace = await this._hass.callWS({ type: 'automation/trace/get', automation_id: automationId, run_id: traceId });
+        } catch (e4) { /* fall through */ }
+      }
+
+      this._timelineData = { trace: fullTrace || latest, meta: latest, entityId, stats };
+    } catch (err) {
+      this._timelineError = (err && err.message) ? err.message : String(err);
+      console.warn('[ha-automation-analyzer] timeline fetch error:', err);
+    } finally {
+      this._timelineLoading = false;
+      this.render();
+    }
+  }
+
+  _renderTimelineSteps(traceObj) {
+    // trace/get returns {trace: {path: [...], ...}} or just the object
+    const traceData = (traceObj && traceObj.trace) ? traceObj.trace : traceObj;
+    const path = traceData && (traceData.path || traceData.trace_path);
+    if (!path || !Array.isArray(path) || path.length === 0) return null;
+
+    // Get the start time for relative offsets
+    const rawStart = (traceData.timestamp && traceData.timestamp.start) ? traceData.timestamp.start : (traceData.timestamp || null);
+    const startMs = rawStart ? new Date(rawStart).getTime() : null;
+
+    const steps = path.map((step, idx) => {
+      // Each step has: path (e.g. "trigger/0", "condition/0", "action/0"), ...
+      // changed_variables is set for changed steps, error for errors
+      const stepPath = step.path || '';
+      const changed = step.changed_variables;
+      const error = step.error;
+      let statusClass, statusLabel;
+
+      if (error) {
+        statusClass = 'tl-fail'; statusLabel = this._t.timelineFail;
+      } else if (changed && Object.keys(changed).length > 0) {
+        statusClass = 'tl-changed'; statusLabel = this._t.timelineChanged;
+      } else if (step.result !== undefined && step.result === false) {
+        statusClass = 'tl-skip'; statusLabel = this._t.timelineSkipped;
+      } else {
+        statusClass = 'tl-pass'; statusLabel = this._t.timelinePass;
+      }
+
+      // Relative timestamp
+      let relStr = '';
+      const stepTs = step.timestamp;
+      if (stepTs && startMs) {
+        const stepMs = new Date(stepTs).getTime();
+        const diff = stepMs - startMs;
+        relStr = `+${diff >= 0 ? diff : 0}ms`;
+      }
+
+      // Pretty path label: trigger/0 → Trigger 1, condition/0 → Condition 1, action/0/... → Action 1 > ...
+      const parts = stepPath.split('/');
+      let label = stepPath;
+      if (parts.length >= 2) {
+        const type = parts[0];
+        const num = parseInt(parts[1], 10);
+        const prefix = type.charAt(0).toUpperCase() + type.slice(1);
+        label = isNaN(num) ? prefix : `${prefix} ${num + 1}`;
+        if (parts.length > 2) label += ' › ' + parts.slice(2).join('/');
+      }
+
+      const errorMsg = error ? `<div class="tl-error-msg">${_esc(String(error))}</div>` : '';
+
+      return `<div class="tl-step ${idx === path.length - 1 ? 'tl-last' : ''}">
+        <div class="tl-connector"><div class="tl-dot ${statusClass}"></div></div>
+        <div class="tl-body">
+          <div class="tl-row">
+            <span class="tl-path">${_esc(label)}</span>
+            <span class="tl-badge ${statusClass}">${statusLabel}</span>
+            ${relStr ? `<span class="tl-time">${relStr}</span>` : ''}
+          </div>
+          ${errorMsg}
+        </div>
+      </div>`;
+    });
+
+    return steps.join('');
+  }
+
   render() {
     if (!this._hass) return;
     const styles = `
@@ -1947,6 +2102,101 @@ class HAAutomationAnalyzer extends HTMLElement {
         position: relative; height: 250px; margin-bottom: var(--aa-space-4);
         width: 100%; overflow: hidden;
       }
+      /* === TIMELINE TAB === */
+      .tl-select-bar {
+        display: flex; flex-wrap: wrap; gap: var(--aa-space-2);
+        margin-bottom: var(--aa-space-4); align-items: center;
+      }
+      .tl-select-bar select {
+        flex: 1; min-width: 180px; padding: 7px 28px 7px 10px;
+        border: 1px solid var(--bento-border); border-radius: var(--bento-radius-sm);
+        background: var(--bento-card); color: var(--bento-text);
+        font-size: 13px; font-family: var(--aa-font); cursor: pointer;
+        appearance: none; -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2364748b'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 8px center;
+        outline: none; transition: border-color var(--aa-anim);
+      }
+      .tl-select-bar select:focus { border-color: var(--bento-primary); }
+      .tl-meta-row {
+        display: flex; gap: var(--aa-space-3); flex-wrap: wrap;
+        font-size: 12px; color: var(--bento-text-secondary);
+        margin-bottom: var(--aa-space-4); align-items: center;
+      }
+      .tl-meta-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 9px; border-radius: 999px; font-size: 11px;
+        font-weight: 600; border: 1px solid;
+      }
+      .tl-meta-badge.ok { background: var(--bento-success-light, rgba(16,185,129,.1)); color: var(--bento-success, #10b981); border-color: var(--bento-success-border, rgba(16,185,129,.25)); }
+      .tl-meta-badge.err { background: var(--bento-error-light, rgba(239,68,68,.1)); color: var(--bento-error, #ef4444); border-color: var(--bento-error-border, rgba(239,68,68,.25)); }
+      /* Vertical timeline */
+      .tl-list { display: flex; flex-direction: column; position: relative; }
+      .tl-step {
+        display: flex; gap: var(--aa-space-3);
+        position: relative; padding-bottom: var(--aa-space-3);
+      }
+      .tl-step.tl-last { padding-bottom: 0; }
+      .tl-connector {
+        display: flex; flex-direction: column; align-items: center;
+        flex-shrink: 0; width: 20px;
+      }
+      .tl-dot {
+        width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+        border: 2px solid; z-index: 1; position: relative;
+      }
+      .tl-dot.tl-pass    { background: var(--bento-success, #10b981); border-color: var(--bento-success, #10b981); }
+      .tl-dot.tl-fail    { background: var(--bento-error, #ef4444);   border-color: var(--bento-error, #ef4444); }
+      .tl-dot.tl-skip    { background: var(--bento-text-muted, #94a3b8); border-color: var(--bento-border, #e2e8f0); }
+      .tl-dot.tl-changed { background: var(--bento-warning, #f59e0b); border-color: var(--bento-warning, #f59e0b); }
+      .tl-connector::after {
+        content: ''; flex: 1; width: 2px;
+        background: var(--bento-border, #e2e8f0);
+        margin-top: 4px;
+      }
+      .tl-step.tl-last .tl-connector::after { display: none; }
+      .tl-body { flex: 1; min-width: 0; }
+      .tl-row {
+        display: flex; align-items: center; gap: var(--aa-space-2);
+        flex-wrap: wrap; margin-top: 0;
+      }
+      .tl-path {
+        font-size: 13px; font-weight: 500; color: var(--bento-text); flex: 1;
+        min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .tl-badge {
+        font-size: 10px; font-weight: 700; padding: 2px 8px;
+        border-radius: 999px; flex-shrink: 0; border: 1px solid;
+        text-transform: uppercase; letter-spacing: .04em;
+      }
+      .tl-badge.tl-pass    { background: var(--bento-success-light, rgba(16,185,129,.1)); color: var(--bento-success, #10b981); border-color: var(--bento-success-border, rgba(16,185,129,.25)); }
+      .tl-badge.tl-fail    { background: var(--bento-error-light, rgba(239,68,68,.1));   color: var(--bento-error, #ef4444);   border-color: var(--bento-error-border, rgba(239,68,68,.25)); }
+      .tl-badge.tl-skip    { background: var(--bento-bg-2, #f5f5f4); color: var(--bento-text-muted, #94a3b8); border-color: var(--bento-border, #e2e8f0); }
+      .tl-badge.tl-changed { background: var(--bento-warning-light, rgba(245,158,11,.1)); color: var(--bento-warning, #f59e0b); border-color: var(--bento-warning-border, rgba(245,158,11,.25)); }
+      .tl-time {
+        font-size: 11px; color: var(--bento-text-muted); font-family: "JetBrains Mono", ui-monospace, monospace;
+        white-space: nowrap; flex-shrink: 0;
+      }
+      .tl-error-msg {
+        margin-top: 4px; font-size: 11.5px; color: var(--bento-error, #ef4444);
+        background: var(--bento-error-light, rgba(239,68,68,.08));
+        border-radius: var(--bento-radius-xs); padding: 5px 9px;
+        border: 1px solid var(--bento-error-border, rgba(239,68,68,.2));
+        word-break: break-word;
+      }
+      .tl-tip {
+        margin-top: var(--aa-space-4); font-size: 12px; color: var(--bento-text-secondary);
+        background: var(--bento-primary-light, rgba(59,130,246,.08));
+        border-left: 3px solid var(--bento-primary); border-radius: var(--bento-radius-xs);
+        padding: 10px 12px; line-height: 1.55;
+      }
+      .tl-inline-err {
+        padding: 10px 14px; border-radius: var(--bento-radius-sm);
+        background: var(--bento-error-light, rgba(239,68,68,.08));
+        color: var(--bento-error, #ef4444);
+        border: 1px solid var(--bento-error-border, rgba(239,68,68,.2));
+        font-size: 13px; font-weight: 500; margin-bottom: var(--aa-space-3);
+      }
     `;
 
     const totalActive = Array.from(this.automationStats.values()).filter(a => a.state === "on").length;
@@ -2203,6 +2453,93 @@ class HAAutomationAnalyzer extends HTMLElement {
           ${optData.stale.length > 0 ? this._renderPagination('opt-stale', optData.stale.length) : ''}
         </div>
       `;
+    } else if (this.currentTab === 'timeline') {
+      // Build sorted automation list for the selector
+      const allAutos = Array.from(this.automationStats.values())
+        .sort((a, b) => {
+          const at = a.lastTriggered ? a.lastTriggered.getTime() : 0;
+          const bt = b.lastTriggered ? b.lastTriggered.getTime() : 0;
+          return bt - at;
+        });
+
+      const selectorOptions = allAutos.map(a => {
+        const timeStr = a.lastTriggered ? this._formatTimeSince(a.lastTriggered) : this._t.never;
+        const label = `${a.name} (${timeStr})`;
+        const sel = this._selectedTimelineId === a.id ? 'selected' : '';
+        return `<option value="${_esc(a.id)}" ${sel}>${_esc(label)}</option>`;
+      }).join('');
+
+      // Default auto-select: use last triggered if no selection yet
+      if (!this._selectedTimelineId && allAutos.length > 0) {
+        const recent = allAutos.find(a => a.lastTriggered && a.state === 'on') || allAutos[0];
+        if (recent) this._selectedTimelineId = recent.id;
+      }
+
+      let timelineBody = '';
+
+      if (this._timelineLoading) {
+        timelineBody = `<div class="loading-state"><div class="loading-spinner" style="margin:0 auto 10px;width:22px;height:22px;border-width:3px;border-color:rgba(0,0,0,.1);border-top-color:var(--bento-primary)"></div><div>${this._t.timelineLoading}</div></div>`;
+      } else if (this._timelineError) {
+        timelineBody = `<div class="tl-inline-err">⚠ ${_esc(this._timelineError)}</div><div class="tl-tip">${this._t.timelineTracingTip}</div>`;
+      } else if (!this._selectedTimelineId) {
+        timelineBody = `<div class="empty-state">${this._t.timelineSelectPrompt}</div>`;
+      } else if (this._timelineData) {
+        const td = this._timelineData;
+        if (td.empty) {
+          // No traces available
+          const lt = td.stats && td.stats.lastTriggered ? `${this._t.timelineLastTriggered}: ${this._formatTimeSince(td.stats.lastTriggered)}` : '';
+          timelineBody = `
+            <div class="empty-state" style="text-align:left;padding:20px">
+              ${lt ? `<div style="margin-bottom:8px;font-size:13px;color:var(--bento-text)">${lt}</div>` : ''}
+              <div style="margin-bottom:8px">${this._t.timelineNoTrace}</div>
+            </div>
+            <div class="tl-tip">${this._t.timelineTracingTip}</div>`;
+        } else {
+          // Render the trace
+          const trace = td.trace || {};
+          const meta = td.meta || {};
+          const rawStart = (trace.timestamp && trace.timestamp.start) ? trace.timestamp.start : (meta.timestamp && meta.timestamp.start ? meta.timestamp.start : (trace.timestamp || meta.timestamp || null));
+          const rawEnd = (trace.timestamp && trace.timestamp.finish) ? trace.timestamp.finish : (meta.timestamp && meta.timestamp.finish ? meta.timestamp.finish : (trace.finished_at || meta.finished_at || null));
+          const startDate = rawStart ? new Date(rawStart) : null;
+          const totalDur = (startDate && rawEnd) ? (new Date(rawEnd).getTime() - startDate.getTime()) : null;
+
+          const runStatus = trace.state || meta.state || '';
+          const scriptExec = trace.script_execution || meta.script_execution || '';
+          const isError = scriptExec === 'error' || runStatus === 'stopped' && scriptExec === 'error';
+          const statusBadge = isError
+            ? `<span class="tl-meta-badge err">${this._t.timelineFail}</span>`
+            : `<span class="tl-meta-badge ok">${this._t.timelinePass}</span>`;
+
+          const stepsHtml = this._renderTimelineSteps(trace);
+
+          timelineBody = `
+            <div class="tl-meta-row">
+              ${statusBadge}
+              ${startDate ? `<span>${startDate.toLocaleString(this._lang === 'pl' ? 'pl-PL' : 'en-US')}</span>` : ''}
+              ${totalDur !== null ? `<span>${totalDur}ms total</span>` : ''}
+            </div>
+            ${stepsHtml
+              ? `<div class="tl-list">${stepsHtml}</div>`
+              : `<div class="empty-state">${this._t.timelineNoTrace}</div><div class="tl-tip">${this._t.timelineTracingTip}</div>`
+            }`;
+        }
+      } else if (this._selectedTimelineId) {
+        // Has selection but no data yet — auto-trigger fetch
+        timelineBody = `<div class="empty-state">${this._t.timelineSelectPrompt}</div>`;
+      }
+
+      activeTabContent = `
+        <h2 class="card-title" style="margin-bottom:var(--aa-space-4)">${this._t.timelineTitle}</h2>
+        <div class="tl-select-bar">
+          <select id="tl-auto-select">
+            <option value="">— ${this._t.timelineSelectPrompt} —</option>
+            ${selectorOptions}
+          </select>
+        </div>
+        <div class="card" style="padding:var(--aa-space-4)">
+          ${timelineBody}
+        </div>
+      `;
     }
 
     const loadingContent = `
@@ -2361,6 +2698,7 @@ ${styles}
           <button class="tab-btn ${this.currentTab === "overview" ? "active" : ""}" data-tab="overview">${this._t.tabOverview}</button>
           <button class="tab-btn ${this.currentTab === "performance" ? "active" : ""}" data-tab="performance">${this._t.tabPerformance}</button>
           <button class="tab-btn ${this.currentTab === "optimization" ? "active" : ""}" data-tab="optimization">${this._t.tabOptimization}</button>
+          <button class="tab-btn ${this.currentTab === "timeline" ? "active" : ""}" data-tab="timeline">${this._t.tabTimeline}</button>
         </div>
         ${mainContent}
       </div>
@@ -2526,6 +2864,30 @@ ${styles}
         if (entityId) this._toggleAutomation(entityId, action === "enable");
       });
     });
+
+    // Timeline automation selector
+    const tlSelect = this.shadowRoot.getElementById("tl-auto-select");
+    if (tlSelect) {
+      // If we just rendered the timeline tab with a pre-selected automation but no data yet, trigger a fetch
+      if (this.currentTab === 'timeline' && this._selectedTimelineId && !this._timelineData && !this._timelineLoading && !this._timelineError) {
+        this._fetchTimeline(this._selectedTimelineId);
+      }
+      tlSelect.addEventListener("change", (e) => {
+        const entityId = e.target.value;
+        if (!entityId) {
+          this._selectedTimelineId = null;
+          this._timelineData = null;
+          this._timelineError = null;
+          this.render();
+          return;
+        }
+        if (entityId === this._selectedTimelineId && this._timelineData) return; // already loaded
+        this._selectedTimelineId = entityId;
+        this._timelineData = null;
+        this._timelineError = null;
+        this._fetchTimeline(entityId);
+      });
+    }
   }
 
   _rerenderContent() {
