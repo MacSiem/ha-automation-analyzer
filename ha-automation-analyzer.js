@@ -1,4 +1,4 @@
-/* HA Tools split — ha-automation-analyzer v4.1.6 (2026-06-07) — single-tool standalone repo */
+/* HA Tools split — ha-automation-analyzer v4.1.7 (2026-06-07) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -1235,6 +1235,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     this._isLoading = true;
     this._loadingPhase = "Odczytywanie stan\u00f3w automatyzacji...";
     try {
+      this._fetchError = null;
       const automations = Object.entries(this._hass.states).filter(([id]) => id.startsWith("automation."));
       this.automationStats.clear();
       this.triggerTypes.clear();
@@ -1427,6 +1428,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       this._loadingPhase = "";
       this._lastUpdated = new Date();
     } catch (err) {
+      this._fetchError = (err && err.message) ? 'Could not load automation data: ' + err.message : 'Could not load automation data';
       console.error("Error in updateAutomationData:", err);
     } finally {
       this._isLoading = false;
@@ -2331,6 +2333,7 @@ ${styles}
 
 </style>
       <div class="card">
+        ${this._fetchError ? `<div style="margin-bottom:12px;padding:10px 14px;background:var(--bento-error-light,rgba(239,68,68,0.08));color:var(--bento-error,#EF4444);border:1px solid var(--bento-error-border,rgba(239,68,68,0.25));border-radius:var(--bento-radius-sm,10px);font-size:13px;font-weight:500">⚠ ${this._fetchError}</div>` : ''}
         <div class="header">
           <div class="header-left">
             <h1>${_esc(this.config.title || '')}</h1>
