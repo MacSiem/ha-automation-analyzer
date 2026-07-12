@@ -1,72 +1,91 @@
-# 📊 Automation Analyzer
+# HA Automation Analyzer
 
-![Preview](banner.png)
+Analyze the health, activity and performance of your Home Assistant automations —
+directly from a Lovelace card. Zero configuration: add the card and it discovers
+every `automation.*` entity in your instance.
 
-Analyze your Home Assistant automations — failures, hot spots, traces.
+[![Version](https://img.shields.io/github/v/release/MacSiem/ha-automation-analyzer)](https://github.com/MacSiem/ha-automation-analyzer/releases) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue.svg?logo=homeassistant)](https://www.home-assistant.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Version](https://img.shields.io/github/v/release/MacSiem/ha-automation-analyzer)](https://github.com/MacSiem/ha-automation-analyzer/releases)
+## How it works
+
+**Short version: it works automatically.** The card needs no configuration and no
+extra integration:
+
+1. **Instant overview from HA state.** On load, the card reads every `automation.*`
+   entity (state, `last_triggered`) and immediately renders a system health score,
+   total / active / disabled / error counts, and a searchable, sortable list —
+   with zero API calls.
+2. **Deeper analysis from traces.** In the background it fetches automation configs
+   and execution traces (`trace/list`) to build the Performance, Optimization and
+   Timeline tabs: execution time distribution, trigger types, daily activity and
+   improvement hints.
+3. **Trace limits apply.** Home Assistant keeps only the last 5 traces per automation
+   by default and clears them on restart. For richer history, raise `stored_traces`
+   in your automation configs (the card links to Trace Viewer for this).
+
+### What is automatic vs. manual
+
+| Automatic | Manual (optional) |
+|---|---|
+| Discovering all automations | Nothing required to start |
+| Health score + activity list | Increasing `stored_traces` for deeper history |
+| Trace-based performance stats | Acting on optimization hints |
 
 ## Screenshots
 
-![Screenshot](screenshot.png)
+| Light | Dark |
+|---|---|
+| ![Overview, light theme](docs/screenshots/card-overview-light.png) | ![Overview, dark theme](docs/screenshots/card-overview-dark.png) |
 
-> Part of the [HA Tools](https://github.com/MacSiem) ecosystem — split into individual HACS-installable plugins.
+*The Overview tab: system health score, counts, and the searchable automation list.
+Dark mode follows your Home Assistant theme automatically.*
 
-## Installation (HACS)
+## Installation
 
-**Automation Analyzer is in the HACS default store** — no custom repository needed:
+1. Open HACS → Custom repositories.
+2. Add `https://github.com/MacSiem/ha-automation-analyzer` as category **Dashboard**
+   (Lovelace plugin).
+3. Install **HA Automation Analyzer** and reload your browser.
 
-1. Open **HACS** in Home Assistant
-2. Search for **Automation Analyzer**
-3. Install and refresh your browser
-
-[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=MacSiem&repository=ha-automation-analyzer&category=plugin)
-
-## Usage
-
-### Lovelace card
+## Quick start
 
 ```yaml
 type: custom:ha-automation-analyzer
 ```
 
-### Optional sidebar panel (`configuration.yaml`)
+That's it — no options are required.
 
-```yaml
-panel_custom:
-  - name: ha-automation-analyzer
-    sidebar_title: Automation Analyzer
-    sidebar_icon: mdi:home-assistant
-    url_path: ha-automation-analyzer
-    js_url: /local/community/ha-automation-analyzer/ha-automation-analyzer.js
-    embed_iframe: false
-    config: {}
-```
+## Tabs
 
-After restart, **Automation Analyzer** appears in the HA sidebar.
+- **Overview** — health score, totals, most active automations, full list with
+  search, sort and time filters.
+- **Performance** — execution time distribution, trigger types, daily executions
+  (requires traces; see note above).
+- **Optimization** — hints such as never-triggered or long-running automations.
+- **Timeline** — recent execution history.
 
-## Features
+## FAQ
 
-- Analyze your Home Assistant automations — failures, hot spots, traces.
-- Bundled Bento Design System (light + dark mode, mobile-friendly)
-- Self-contained — no shared HA Tools dependency
-- Tool settings and dismissed-banner state are cached in browser `localStorage`
-## Privacy
+**Do I have to configure anything?**
+No. Add the card and it discovers your automations by itself.
 
-- No telemetry, no analytics, no tracking
-- No external network calls, no CDN-hosted assets (system fonts only)
-- No data leaves your device (no external network calls)
+**Why are the Performance charts sparse?**
+Home Assistant stores only the last 5 traces per automation by default and clears
+them on restart. Increase `stored_traces` per automation for more data.
+
+**Does this send data anywhere?**
+No. Everything runs locally in your browser against your Home Assistant instance —
+no telemetry, no CDN assets.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
 
 ## Support
 
-If this tool makes your Home Assistant life easier, consider supporting development:
-
-- [☕ Buy Me a Coffee](https://buymeacoffee.com/macsiem)
-- [💳 PayPal](https://www.paypal.com/donate/?hosted_button_id=Y967H4PLRBN8W)
+- [Buy Me a Coffee](https://buymeacoffee.com/macsiem)
+- [PayPal](https://www.paypal.com/donate/?hosted_button_id=Y967H4PLRBN8W)
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
