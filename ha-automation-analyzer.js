@@ -1,4 +1,4 @@
-/* HA Tools split — ha-automation-analyzer v4.1.9 (2026-06-07) — single-tool standalone repo */
+/* HA Tools split — ha-automation-analyzer v4.1.10 (2026-07-12) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -1048,13 +1048,26 @@ class HAAutomationAnalyzer extends HTMLElement {
 
   async _loadChartJS() {
     if (this._chartJsLoaded && window.Chart) return window.Chart;
-    return new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "/local/community/ha-tools/vendor/chart.umd.min.js";
-      script.onload = () => { this._chartJsLoaded = true; resolve(window.Chart); };
-      script.onerror = () => reject(new Error("Failed to load Chart.js"));
-      document.head.appendChild(script);
+    if (this._chartJsPromise) return this._chartJsPromise;
+    this._chartJsPromise = new Promise((resolve, reject) => {
+      // Privacy/offline: prefer the locally-vendored Chart.js (legacy ha-tools
+      // monorepo path); fall back to the official CDN only if it is absent.
+      const LOCAL = "/local/community/ha-tools/vendor/chart.umd.min.js";
+      const CDN = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js";
+      const load = (src, onFail) => {
+        const script = document.createElement("script");
+        script.src = src;
+        script.async = true;
+        script.onload = () => { this._chartJsLoaded = true; resolve(window.Chart); };
+        script.onerror = onFail;
+        document.head.appendChild(script);
+      };
+      load(LOCAL, () => load(CDN, () => {
+        this._chartJsPromise = null;
+        reject(new Error("Failed to load Chart.js (local vendor and CDN)"));
+      }));
     });
+    return this._chartJsPromise;
   }
 
   _getCachedData(key) {

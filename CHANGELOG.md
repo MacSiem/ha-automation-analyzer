@@ -1,5 +1,12 @@
 # Changelog — Automation Analyzer
 
+## [4.1.10] - 2026-07-12
+
+- Fix: charts now render on standalone HACS installs — Chart.js loader falls
+  back to the jsDelivr CDN when the legacy local vendor copy
+  (/local/community/ha-tools/vendor/chart.umd.min.js) is absent.
+- Docs: README FAQ updated to disclose the CDN fallback honestly.
+
 ## [4.1.9] - 2026-06-15
 
 - Theme: dark/light now follows the active Home Assistant theme (luminance of --card-background-color) instead of OS prefers-color-scheme.

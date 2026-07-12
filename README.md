@@ -74,8 +74,11 @@ Home Assistant stores only the last 5 traces per automation by default and clear
 them on restart. Increase `stored_traces` per automation for more data.
 
 **Does this send data anywhere?**
-No. Everything runs locally in your browser against your Home Assistant instance —
-no telemetry, no CDN assets.
+No telemetry — all analysis runs locally in your browser against your Home
+Assistant instance. One exception: the charting library (Chart.js) is loaded
+from the jsDelivr CDN if a locally-vendored copy
+(`/local/community/ha-tools/vendor/chart.umd.min.js`) is not present. Only the
+library file is fetched; none of your data is sent anywhere.
 
 ## Changelog
 
