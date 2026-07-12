@@ -1,5 +1,7 @@
 # HA Automation Analyzer
 
+![Preview](banner.png)
+
 Analyze the health, activity and performance of your Home Assistant automations —
 directly from a Lovelace card. Zero configuration: add the card and it discovers
 every `automation.*` entity in your instance.
