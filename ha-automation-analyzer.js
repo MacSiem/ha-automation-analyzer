@@ -1,4 +1,4 @@
-/* HA Tools split — ha-automation-analyzer v4.1.10 (2026-07-12) — single-tool standalone repo */
+/* HA Tools split — ha-automation-analyzer v4.1.11 (2026-07-12) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -172,10 +172,10 @@ if (typeof window !== 'undefined' && !window.HAToolsBentoCSS) {
   background: var(--bento-bg-2) !important;
   border-radius: var(--bento-radius-pill) !important;
   margin-bottom: 20px !important;
-  overflow-x: auto !important; overflow-y: hidden !important;
+  overflow: visible !important;
   -webkit-overflow-scrolling: touch !important;
-  flex-wrap: nowrap !important; border-bottom: 0 !important;
-  width: fit-content; max-width: 100%;
+  flex-wrap: wrap !important; border-bottom: 0 !important;
+  width: 100%; max-width: 100%; box-sizing: border-box;
 }
 .tab, .tab-btn, .tab-button, .dtab {
   padding: 8px 16px !important;
@@ -186,7 +186,7 @@ if (typeof window !== 'undefined' && !window.HAToolsBentoCSS) {
   border-radius: var(--bento-radius-pill) !important;
   margin-bottom: 0 !important;
   transition: all var(--bento-trans) !important;
-  white-space: nowrap !important; flex: none !important;
+  white-space: nowrap !important; flex: 1 1 auto !important; text-align: center !important; min-height: 40px !important;
   letter-spacing: -0.005em !important;
 }
 .tab:hover, .tab-btn:hover, .tab-button:hover, .dtab:hover {
