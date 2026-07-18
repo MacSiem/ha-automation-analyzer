@@ -1,3 +1,7 @@
+## 4.1.13 (2026-07-18)
+
+- Fix (UI): the small accent dot before section titles no longer detaches from the title text (it was pushed to the opposite edge by the header's flex space-between); it is now pinned next to the title.
+
 # Changelog — Automation Analyzer
 
 ## [4.1.10] - 2026-07-12
