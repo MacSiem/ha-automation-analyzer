@@ -1,4 +1,4 @@
-/* HA Tools split — ha-automation-analyzer v4.1.13 (2026-07-12) — single-tool standalone repo */
+/* HA Tools split — ha-automation-analyzer v4.1.14 (2026-07-12) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -1629,11 +1629,23 @@ class HAAutomationAnalyzer extends HTMLElement {
       await this._hass.callService("automation", enable ? "turn_on" : "turn_off", {
         entity_id: entityId
       });
+      this._toast((enable ? "Enabled " : "Disabled ") + entityId.replace(/^automation\./, ""));
       // Refresh data after toggle
       setTimeout(() => this._loadAndRender(), 1000);
     } catch (e) {
       console.error("Failed to toggle automation:", e);
+      this._toast("Could not change automation: " + ((e && e.message) || "unknown error"), true);
     }
+  }
+
+  _toast(message, isError) {
+    try {
+      this.dispatchEvent(new CustomEvent("hass-notification", {
+        detail: { message: (isError ? "⚠️ " : "") + message },
+        bubbles: true,
+        composed: true,
+      }));
+    } catch (e) {}
   }
 
   async _fetchTimeline(entityId) {
