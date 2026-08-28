@@ -19,3 +19,8 @@ build/
 # Local
 .env
 .env.local
+
+# Python test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/

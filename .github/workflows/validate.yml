@@ -34,5 +34,5 @@ jobs:
       - name: Runtime smoke (jsdom render)
         run: |
           npm init -y >/dev/null 2>&1
-          npm install jsdom >/dev/null 2>&1
+          npm ci >/dev/null 2>&1
           node .github/smoke.cjs

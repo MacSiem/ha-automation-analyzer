@@ -1,3 +1,11 @@
+## 4.1.15 (2026-08-28)
+
+- Isolation: Bento CSS is component-local and cannot be captured from `window.HAToolsBentoCSS` by load order.
+- Isolation: persistence is now card-local, removing `window._haToolsPersistence` load-order coupling while retaining existing localStorage keys.
+- Security: remove the suite-wide DOM/shadow-root injector; intro and support UI now render only inside this card.
+- Security: normalize non-string values before both local and inherited HTML escaping.
+- Lifecycle: cancel deferred renders when the card disconnects; add isolation/XSS runtime regression coverage.
+
 ## 4.1.14 (2026-07-18)
 
 - Fix: enabling/disabling an automation now shows a confirmation, and a clear error toast if it fails (e.g. no permission), instead of silently doing nothing.
