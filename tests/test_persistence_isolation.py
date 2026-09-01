@@ -16,7 +16,8 @@ class PersistenceIsolationTest(unittest.TestCase):
                 source = (ROOT / relative_path).read_text(encoding="utf-8")
                 self.assertNotIn("window._haToolsPersistence", source)
                 self.assertNotIn("full impl in ha-tools-panel", source)
-                self.assertIn("haToolsPersistence", source)
+                self.assertNotIn("haToolsPersistence", source)
+                self.assertNotIn("ha-tools-automation-analyzer-settings", source)
 
 
 if __name__ == "__main__":

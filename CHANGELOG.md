@@ -1,3 +1,12 @@
+## 4.2.0 (2026-09-01)
+
+- Feature: add a versioned Home Assistant trace contract with strict normalization and bounded trace data for the timeline view.
+- Reliability: isolate concurrent card instances, cancel stale asynchronous work, and fully release listeners, observers, and timers on disconnect.
+- Security: keep runtime, configuration, persisted, and trace values inert in the DOM; safely encode identifiers used in navigation and API paths.
+- Privacy: replace screenshots with deterministic synthetic fixtures and source-bound, OCR-checked light, dark, and narrow captures.
+- UI: let Home Assistant Sections use the card's natural dynamic height instead of forcing eight grid rows.
+- CI: verify trace behavior, runtime isolation, screenshot provenance/privacy, syntax, persistence isolation, and the standalone smoke path.
+
 ## 4.1.15 (2026-08-28)
 
 - Isolation: Bento CSS is component-local and cannot be captured from `window.HAToolsBentoCSS` by load order.

@@ -1,0 +1,36 @@
+{
+  "last_step": "action/0",
+  "run_id": "running-private-run",
+  "state": "running",
+  "script_execution": null,
+  "timestamp": {
+    "start": "2026-08-31T08:10:00.000Z",
+    "finish": null
+  },
+  "domain": "automation",
+  "item_id": "private-bedroom-routine",
+  "trigger": "state of person.private_resident",
+  "trace": {
+    "action/0": [
+      {
+        "path": "action/0",
+        "timestamp": "2026-08-31T08:10:00.050Z"
+      }
+    ],
+    "trigger/0": [
+      {
+        "path": "trigger/0",
+        "timestamp": "2026-08-31T08:10:00.010Z"
+      }
+    ]
+  },
+  "config": {
+    "id": "private-bedroom-routine"
+  },
+  "blueprint_inputs": null,
+  "context": {
+    "id": "private-running-context",
+    "parent_id": null,
+    "user_id": "private-user-id"
+  }
+}

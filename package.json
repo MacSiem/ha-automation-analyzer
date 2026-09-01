@@ -3,6 +3,11 @@
   "version": "0.0.0-private",
   "private": true,
   "scripts": {
+    "test": "npm run test:trace && npm run test:runtime && npm run test:screenshots && npm run test:smoke",
+    "test:trace": "node --test tests/trace-contract.test.mjs",
+    "test:runtime": "node --test tests/runtime-card.test.mjs",
+    "test:screenshots": "node --test tests/screenshot-contract.test.mjs",
+    "screenshots:render": "node scripts/render-screenshots.mjs",
     "test:smoke": "node .github/smoke.cjs"
   },
   "devDependencies": {

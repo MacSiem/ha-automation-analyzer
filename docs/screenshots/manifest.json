@@ -1,0 +1,89 @@
+{
+  "schema_version": 2,
+  "source": {
+    "path": "ha-automation-analyzer.js",
+    "sha256": "98cd5f09c5757b669f286d006d429eea6e0767b281e006623be1f232e1bfbce0"
+  },
+  "fixture": {
+    "seed": "aa-demo-v1",
+    "clock": "2026-08-31T10:00:00.000Z",
+    "locale": "en-US",
+    "timezone": "UTC"
+  },
+  "renderer": {
+    "name": "Google Chrome",
+    "version": "152.0.7977.65",
+    "executable_sha256": "d7c482410d72ac0b4e834d16f97d0f884c55bc302a47a7bb2a01d189b449f9a5"
+  },
+  "captures": [
+    {
+      "file": "card-overview-light.png",
+      "theme": "light",
+      "viewport": "desktop",
+      "pixel_width": 480,
+      "pixel_height": 1117,
+      "source_sha256": "98cd5f09c5757b669f286d006d429eea6e0767b281e006623be1f232e1bfbce0",
+      "image_sha256": "224b48b5b12093ed8da5562ae4ea4b12a1e25f32a0dbe57696e558c9ba6f34d8",
+      "render_sha256_samples": [
+        "224b48b5b12093ed8da5562ae4ea4b12a1e25f32a0dbe57696e558c9ba6f34d8",
+        "224b48b5b12093ed8da5562ae4ea4b12a1e25f32a0dbe57696e558c9ba6f34d8"
+      ],
+      "layout": {
+        "horizontal_overflow": false,
+        "chart_state_height": 64,
+        "chart_panel_height": 122
+      },
+      "runtime": {
+        "locale": "en-US",
+        "timezone": "UTC",
+        "loading": false
+      }
+    },
+    {
+      "file": "card-overview-dark.png",
+      "theme": "dark",
+      "viewport": "desktop",
+      "pixel_width": 480,
+      "pixel_height": 1117,
+      "source_sha256": "98cd5f09c5757b669f286d006d429eea6e0767b281e006623be1f232e1bfbce0",
+      "image_sha256": "1388211959ebd946eb1c77ba0f2b963cf2cad1c9e012e5b46a18c197a3203925",
+      "render_sha256_samples": [
+        "1388211959ebd946eb1c77ba0f2b963cf2cad1c9e012e5b46a18c197a3203925",
+        "1388211959ebd946eb1c77ba0f2b963cf2cad1c9e012e5b46a18c197a3203925"
+      ],
+      "layout": {
+        "horizontal_overflow": false,
+        "chart_state_height": 64,
+        "chart_panel_height": 122
+      },
+      "runtime": {
+        "locale": "en-US",
+        "timezone": "UTC",
+        "loading": false
+      }
+    },
+    {
+      "file": "card-overview-narrow.png",
+      "theme": "light",
+      "viewport": "narrow",
+      "pixel_width": 360,
+      "pixel_height": 1232,
+      "source_sha256": "98cd5f09c5757b669f286d006d429eea6e0767b281e006623be1f232e1bfbce0",
+      "image_sha256": "03309dd20ff97dc87609ebe320e40721a2b9444db4445ba65e0bc3292a11d5df",
+      "render_sha256_samples": [
+        "03309dd20ff97dc87609ebe320e40721a2b9444db4445ba65e0bc3292a11d5df",
+        "03309dd20ff97dc87609ebe320e40721a2b9444db4445ba65e0bc3292a11d5df"
+      ],
+      "layout": {
+        "horizontal_overflow": false,
+        "chart_state_height": 64,
+        "chart_panel_height": 122
+      },
+      "runtime": {
+        "locale": "en-US",
+        "timezone": "UTC",
+        "loading": false
+      }
+    }
+  ]
+}

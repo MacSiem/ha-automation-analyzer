@@ -1,0 +1,7 @@
+{
+  "source_repository": "home-assistant/core",
+  "source_commit": "759e4658f40b3ccb671d418b8a0ed95224bf4561",
+  "websocket_contract": "homeassistant/components/trace/websocket_api.py",
+  "model_contract": "homeassistant/components/trace/models.py",
+  "captured_at": "2026-08-31T11:48:21Z"
+}

@@ -1,12 +1,749 @@
-/* HA Tools split — ha-automation-analyzer v4.1.15 (2026-08-28) — single-tool standalone repo */
+/* HA Tools split — ha-automation-analyzer v4.2.0 (2026-09-01) — single-tool standalone repo */
 (function() {
 'use strict';
 
 // Component-local XSS protection: never reads from or publishes a global helper.
 const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 
-// Component-local persistence retains this card's existing localStorage keys.
-const haToolsPersistence = { _cache: {}, _hass: null, setHass(h) { this._hass = h; }, async save(k, d) { try { localStorage.setItem('ha-automation-analyzer-' + k, JSON.stringify(d)); } catch(e) { console.debug('[ha-automation-analyzer] caught:', e); } }, async load(k) { try { const r = localStorage.getItem('ha-automation-analyzer-' + k); return r ? JSON.parse(r) : null; } catch(e) { return null; } }, loadSync(k) { try { const r = localStorage.getItem('ha-automation-analyzer-' + k); return r ? JSON.parse(r) : null; } catch(e) { return null; } } };
+/* ===== Versioned, privacy-safe Home Assistant trace contract ===== */
+const AA_TRACE_SOURCE = 'home_assistant.trace_ws_v1';
+const AA_TRACE_MAX_BYTES = 2 * 1024 * 1024;
+const AA_TRACE_MAX_DEPTH = 16;
+const AA_TRACE_MAX_STRING_BYTES = 4096;
+const AA_TRACE_MAX_OBJECT_FIELDS = 128;
+const AA_TRACE_MAX_ARRAY = 4096;
+const AA_TRACE_MAX_PATHS = 512;
+const AA_TRACE_MAX_ELEMENTS = 4096;
+const AA_TRACE_MAX_SELECTED_RUNS = 100;
+const AA_TRACE_MAX_GLOBAL_RUNS = 5000;
+const AA_TRACE_BANNED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const AA_TRACE_LIST_FIELDS = new Set([
+  'last_step', 'run_id', 'state', 'script_execution', 'timestamp', 'domain',
+  'item_id', 'not_triggered', 'error', 'trigger'
+]);
+const AA_TRACE_FULL_FIELDS = new Set([
+  ...AA_TRACE_LIST_FIELDS, 'trace', 'config', 'blueprint_inputs', 'context'
+]);
+const AA_TRACE_LEGACY_FIELDS = new Set([
+  'last_step', 'run_id', 'state', 'script_execution', 'timestamp', 'domain',
+  'item_id', 'not_triggered', 'error', 'trigger', 'path'
+]);
+const AA_TRACE_ELEMENT_FIELDS = new Set([
+  'path', 'timestamp', 'child_id', 'changed_variables', 'error',
+  'template_errors', 'result'
+]);
+const AA_TRACE_PATH_PATTERN = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
+const AA_TRACE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function _aaTraceObservedAt(value) {
+  if (_aaParseTimestamp(value) !== null) return value;
+  return new Date().toISOString();
+}
+
+function _aaTraceCapability(status, observedAt, evidence, data) {
+  const result = {
+    status,
+    source: AA_TRACE_SOURCE,
+    observed_at: _aaTraceObservedAt(observedAt),
+    evidence: evidence || {}
+  };
+  if (data !== undefined) result.data = data;
+  return result;
+}
+
+function _aaUtf8Bytes(value, maxBytes = Infinity) {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x7f) bytes += 1;
+    else if (codeUnit <= 0x7ff) bytes += 2;
+    else if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const low = value.charCodeAt(index + 1);
+      if (!(low >= 0xdc00 && low <= 0xdfff)) return Infinity;
+      bytes += 4;
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return Infinity;
+    } else bytes += 3;
+    if (bytes > maxBytes) return Infinity;
+  }
+  return bytes;
+}
+
+function _aaIsPlainObject(value) {
+  try {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const proto = Reflect.getPrototypeOf(value);
+    if (proto === null) return true;
+    if (Reflect.getPrototypeOf(proto) !== null) return false;
+    const constructorDescriptor = Reflect.getOwnPropertyDescriptor(proto, 'constructor');
+    return Boolean(
+      constructorDescriptor && 'value' in constructorDescriptor
+      && typeof constructorDescriptor.value === 'function'
+      && constructorDescriptor.value.name === 'Object'
+    );
+  } catch (_error) {
+    return false;
+  }
+}
+
+function _aaInspectTracePayload(value, options = {}) {
+  const maxBytes = options.maxBytes || AA_TRACE_MAX_BYTES;
+  const maxRootArray = options.maxRootArray || AA_TRACE_MAX_ARRAY;
+  const wideObject = options.wideObject || null;
+  const wideObjectMaxFields = options.wideObjectMaxFields || AA_TRACE_MAX_OBJECT_FIELDS;
+  let bytes = 0;
+  const seen = new WeakSet();
+
+  const addBytes = amount => {
+    bytes += amount;
+    if (!Number.isFinite(bytes) || bytes > maxBytes) throw new Error('trace_payload_limit');
+  };
+
+  const visit = (current, depth) => {
+    if (depth > AA_TRACE_MAX_DEPTH) throw new Error('trace_depth_limit');
+    if (current === null) { addBytes(4); return; }
+    if (typeof current === 'string') {
+      const length = _aaUtf8Bytes(current, AA_TRACE_MAX_STRING_BYTES);
+      if (length > AA_TRACE_MAX_STRING_BYTES) throw new Error('trace_string_limit');
+      addBytes(length + 2);
+      return;
+    }
+    if (typeof current === 'number') {
+      if (!Number.isFinite(current)) throw new Error('trace_non_finite_number');
+      addBytes(16);
+      return;
+    }
+    if (typeof current === 'boolean') { addBytes(5); return; }
+    if (typeof current !== 'object') throw new Error('trace_invalid_type');
+    if (seen.has(current)) throw new Error('trace_cycle');
+    seen.add(current);
+
+    if (Array.isArray(current)) {
+      const arrayLimit = depth === 0 ? maxRootArray : AA_TRACE_MAX_ARRAY;
+      if (current.length > arrayLimit) throw new Error('trace_array_limit');
+      const ownKeys = Reflect.ownKeys(current);
+      for (const key of ownKeys) {
+        if (key === 'length') continue;
+        if (typeof key !== 'string' || !/^\d+$/.test(key)) throw new Error('trace_array_property');
+        const descriptor = Reflect.getOwnPropertyDescriptor(current, key);
+        if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) throw new Error('trace_accessor');
+      }
+      addBytes(2);
+      for (let index = 0; index < current.length; index += 1) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(current, String(index));
+        if (!descriptor || !('value' in descriptor)) throw new Error('trace_sparse_array');
+        visit(descriptor.value, depth + 1);
+      }
+      seen.delete(current);
+      return;
+    }
+
+    if (!_aaIsPlainObject(current)) throw new Error('trace_non_plain_object');
+    const ownKeys = Reflect.ownKeys(current);
+    const objectLimit = current === wideObject ? wideObjectMaxFields : AA_TRACE_MAX_OBJECT_FIELDS;
+    if (ownKeys.length > objectLimit) throw new Error('trace_object_fields_limit');
+    addBytes(2);
+    for (const key of ownKeys) {
+      if (typeof key !== 'string' || AA_TRACE_BANNED_KEYS.has(key)) throw new Error('trace_banned_key');
+      const keyBytes = _aaUtf8Bytes(key, AA_TRACE_MAX_STRING_BYTES);
+      if (keyBytes > AA_TRACE_MAX_STRING_BYTES) throw new Error('trace_key_limit');
+      addBytes(keyBytes + 2);
+      const descriptor = Reflect.getOwnPropertyDescriptor(current, key);
+      if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) throw new Error('trace_accessor');
+      visit(descriptor.value, depth + 1);
+    }
+    seen.delete(current);
+  };
+
+  try {
+    visit(value, 0);
+    return { ok: true, bytes };
+  } catch (_error) {
+    return { ok: false, bytes };
+  }
+}
+
+function _aaHasOnlyFields(value, allowed) {
+  return Reflect.ownKeys(value).every(key => typeof key === 'string' && allowed.has(key));
+}
+
+function _aaParseTimestamp(value) {
+  if (typeof value !== 'string' || !AA_TRACE_TIMESTAMP_PATTERN.test(value)) return null;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) ? milliseconds : null;
+}
+
+function _aaCompareText(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function _aaValidateRunTimestamp(timestamp, state) {
+  if (!_aaIsPlainObject(timestamp) || !_aaHasOnlyFields(timestamp, new Set(['start', 'finish']))) return null;
+  const start = _aaParseTimestamp(timestamp.start);
+  const finish = timestamp.finish === null ? null : _aaParseTimestamp(timestamp.finish);
+  if (start === null || (timestamp.finish !== null && finish === null)) return null;
+  if (state === 'stopped' && finish === null) return null;
+  if (finish !== null && finish < start) return null;
+  return { start, finish };
+}
+
+function _aaValidateRunIdentity(value, expectedItemId, global = false) {
+  if (typeof value.run_id !== 'string' || !value.run_id) return null;
+  if (value.domain !== 'automation') return null;
+  if (typeof value.item_id !== 'string' || !value.item_id) return null;
+  if (!global && value.item_id !== expectedItemId) return null;
+  if (value.state !== 'running' && value.state !== 'stopped') return null;
+  if (value.script_execution !== null && typeof value.script_execution !== 'string') return null;
+  const timestamp = _aaValidateRunTimestamp(value.timestamp, value.state);
+  return timestamp ? { timestamp } : null;
+}
+
+function _aaNormalizeListChecked(payload, options = {}) {
+  const observedAt = options.observedAt;
+  const expectedItemId = options.expectedItemId;
+  const global = options.global === true;
+  const maxRuns = global ? AA_TRACE_MAX_GLOBAL_RUNS : AA_TRACE_MAX_SELECTED_RUNS;
+  const inspection = _aaInspectTracePayload(payload, { maxRootArray: maxRuns });
+  if (!inspection.ok || !Array.isArray(payload) || payload.length > maxRuns
+    || (!global && typeof expectedItemId !== 'string')) {
+    return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/list', error_code: 'malformed' });
+  }
+  const runs = [];
+  for (const value of payload) {
+    if (!_aaIsPlainObject(value) || !_aaHasOnlyFields(value, AA_TRACE_LIST_FIELDS)) {
+      return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/list', error_code: 'malformed' });
+    }
+    const identity = _aaValidateRunIdentity(value, expectedItemId, global);
+    if (!identity) return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/list', error_code: 'malformed' });
+    if (value.not_triggered !== undefined && typeof value.not_triggered !== 'boolean') {
+      return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/list', error_code: 'malformed' });
+    }
+    runs.push({
+      run_id: value.run_id,
+      item_id: value.item_id,
+      run_state: value.state,
+      script_execution: value.script_execution,
+      kind: value.not_triggered === true ? 'non_execution' : 'execution',
+      started_at: value.timestamp.start,
+      finished_at: value.timestamp.finish,
+      run_duration_ms: identity.timestamp.finish === null
+        ? null : identity.timestamp.finish - identity.timestamp.start
+    });
+  }
+  runs.sort((left, right) => {
+    const timeDelta = _aaParseTimestamp(right.started_at) - _aaParseTimestamp(left.started_at);
+    return timeDelta || _aaCompareText(left.run_id, right.run_id);
+  });
+  const status = runs.length ? 'available' : 'no_data';
+  return _aaTraceCapability(status, observedAt, {
+    endpoint: 'trace/list',
+    schema: 'ha-trace-list-v1',
+    run_count: runs.length
+  }, { runs });
+}
+
+function _aaNormalizeList(payload, options = {}) {
+  try {
+    return _aaNormalizeListChecked(payload, options);
+  } catch (_error) {
+    return _aaTraceCapability('malformed', options.observedAt, {
+      endpoint: 'trace/list', error_code: 'malformed'
+    });
+  }
+}
+
+function _aaTraceElementStatus(value) {
+  if (Object.hasOwn(value, 'error') || (Array.isArray(value.template_errors) && value.template_errors.length)) return 'error';
+  if (_aaIsPlainObject(value.changed_variables) && Reflect.ownKeys(value.changed_variables).length) return 'changed';
+  if (value.result === false) return 'skipped';
+  return 'pass';
+}
+
+function _aaNormalizeFullChecked(payload, options = {}) {
+  const observedAt = options.observedAt;
+  const expectedItemId = options.expectedItemId;
+  if (!_aaIsPlainObject(payload) || typeof expectedItemId !== 'string') {
+    return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+  }
+  const isV1 = Object.hasOwn(payload, 'trace');
+  const isLegacy = Object.hasOwn(payload, 'path');
+  if (isV1 === isLegacy) return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+  const traceDescriptor = isV1 ? Reflect.getOwnPropertyDescriptor(payload, 'trace') : null;
+  const wideObject = traceDescriptor && 'value' in traceDescriptor ? traceDescriptor.value : null;
+  const inspection = _aaInspectTracePayload(payload, {
+    wideObject,
+    wideObjectMaxFields: AA_TRACE_MAX_PATHS
+  });
+  if (!inspection.ok) {
+    return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+  }
+  const allowed = isV1 ? AA_TRACE_FULL_FIELDS : AA_TRACE_LEGACY_FIELDS;
+  if (!_aaHasOnlyFields(payload, allowed)) {
+    return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+  }
+  const identity = _aaValidateRunIdentity(payload, expectedItemId);
+  if (!identity) return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+  if (payload.not_triggered !== undefined && typeof payload.not_triggered !== 'boolean') {
+    return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+  }
+
+  const rawNodes = [];
+  if (isV1) {
+    if (!_aaIsPlainObject(payload.trace)) return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+    const paths = Reflect.ownKeys(payload.trace);
+    if (paths.length > AA_TRACE_MAX_PATHS) return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+    for (const path of paths) {
+      if (typeof path !== 'string' || !AA_TRACE_PATH_PATTERN.test(path)) {
+        return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+      }
+      const values = payload.trace[path];
+      if (!Array.isArray(values)) return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+      for (let ordinal = 0; ordinal < values.length; ordinal += 1) {
+        if (rawNodes.length >= AA_TRACE_MAX_ELEMENTS) {
+          return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+        }
+        rawNodes.push({ value: values[ordinal], path, ordinal });
+      }
+    }
+  } else {
+    if (!Array.isArray(payload.path)) return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+    const ordinalByPath = new Map();
+    for (const value of payload.path) {
+      if (rawNodes.length >= AA_TRACE_MAX_ELEMENTS) {
+        return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+      }
+      const path = value?.path;
+      const ordinal = ordinalByPath.get(path) || 0;
+      ordinalByPath.set(path, ordinal + 1);
+      rawNodes.push({ value, path, ordinal });
+    }
+  }
+  if (rawNodes.length > AA_TRACE_MAX_ELEMENTS) return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+
+  const nodes = [];
+  for (const raw of rawNodes) {
+    const value = raw.value;
+    if (!_aaIsPlainObject(value) || !_aaHasOnlyFields(value, AA_TRACE_ELEMENT_FIELDS)) {
+      return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+    }
+    if (value.path !== raw.path || !AA_TRACE_PATH_PATTERN.test(raw.path)) {
+      return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+    }
+    const timestamp = _aaParseTimestamp(value.timestamp);
+    if (timestamp === null || timestamp < identity.timestamp.start
+      || (identity.timestamp.finish !== null && timestamp > identity.timestamp.finish)) {
+      return _aaTraceCapability('malformed', observedAt, { endpoint: 'trace/get', error_code: 'malformed' });
+    }
+    nodes.push({
+      path: raw.path,
+      ordinal: raw.ordinal,
+      status: _aaTraceElementStatus(value),
+      offset_ms: timestamp - identity.timestamp.start,
+      _timestamp: timestamp
+    });
+  }
+  nodes.sort((left, right) => left._timestamp - right._timestamp
+    || _aaCompareText(left.path, right.path) || left.ordinal - right.ordinal);
+  for (const node of nodes) delete node._timestamp;
+  const schema = isV1 ? 'ha-trace-v1' : 'ha-trace-legacy-path-v0';
+  return _aaTraceCapability('available', observedAt, {
+    endpoint: 'trace/get',
+    schema,
+    node_count: nodes.length,
+    run_state: payload.state
+  }, {
+    run_id: payload.run_id,
+    item_id: payload.item_id,
+    run_state: payload.state,
+    kind: payload.not_triggered === true ? 'non_execution' : 'execution',
+    run_duration_ms: identity.timestamp.finish === null
+      ? null : identity.timestamp.finish - identity.timestamp.start,
+    nodes
+  });
+}
+
+function _aaNormalizeFull(payload, options = {}) {
+  try {
+    return _aaNormalizeFullChecked(payload, options);
+  } catch (_error) {
+    return _aaTraceCapability('malformed', options.observedAt, {
+      endpoint: 'trace/get', error_code: 'malformed'
+    });
+  }
+}
+
+function _aaClassifyTraceError(error, options = {}) {
+  let code = null;
+  if (_aaIsPlainObject(error)) {
+    const descriptor = Reflect.getOwnPropertyDescriptor(error, 'code');
+    if (descriptor && 'value' in descriptor && typeof descriptor.value === 'string') code = descriptor.value;
+  }
+  const status = code === 'unauthorized' ? 'permission_denied'
+    : code === 'not_found' ? 'no_data' : 'unavailable';
+  return _aaTraceCapability(status, options.observedAt, {
+    endpoint: options.endpoint || 'trace',
+    error_code: code === 'unauthorized' || code === 'not_found' ? code : 'unavailable'
+  });
+}
+
+function _aaAbortedCapability(endpoint, observedAt) {
+  return _aaTraceCapability('aborted', observedAt, { endpoint, error_code: 'aborted' });
+}
+
+function _aaIsAbortMarker(error) {
+  if (!_aaIsPlainObject(error)) return false;
+  try {
+    const descriptor = Reflect.getOwnPropertyDescriptor(error, '__aaTraceAborted');
+    return Boolean(descriptor && 'value' in descriptor && descriptor.value === true);
+  } catch (_ignored) {
+    return false;
+  }
+}
+
+function _aaAbortRace(promise, signal) {
+  if (!signal) return Promise.resolve(promise);
+  if (signal.aborted) return Promise.reject({ __aaTraceAborted: true });
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = callback => value => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      callback(value);
+    };
+    const onAbort = finish(reject);
+    signal.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(promise).then(finish(resolve), finish(reject));
+  }).catch(error => {
+    if (signal.aborted) throw { __aaTraceAborted: true };
+    throw error;
+  });
+}
+
+function _aaRoleCapability(hass, endpoint, observedAt) {
+  if (!hass || !hass.user || typeof hass.user.is_admin !== 'boolean') {
+    return _aaTraceCapability('unknown_role', observedAt, { endpoint, error_code: 'unknown_role' });
+  }
+  if (hass.user.is_admin !== true) {
+    return _aaTraceCapability('permission_denied', observedAt, { endpoint, error_code: 'admin_required' });
+  }
+  return null;
+}
+
+async function _aaRequestTraceList(options = {}) {
+  const endpoint = 'trace/list';
+  const denied = _aaRoleCapability(options.hass, endpoint, options.observedAt);
+  if (denied) return denied;
+  if (options.signal?.aborted) return _aaAbortedCapability(endpoint, options.observedAt);
+  try {
+    const request = { type: 'trace/list', domain: 'automation' };
+    if (options.global !== true) request.item_id = options.itemId;
+    const payload = await _aaAbortRace(options.hass.callWS(request), options.signal);
+    if (options.signal?.aborted) return _aaAbortedCapability(endpoint, options.observedAt);
+    return _aaNormalizeList(payload, {
+      expectedItemId: options.itemId,
+      observedAt: options.observedAt,
+      global: options.global === true
+    });
+  } catch (error) {
+    if (options.signal?.aborted || _aaIsAbortMarker(error)) {
+      return _aaAbortedCapability(endpoint, options.observedAt);
+    }
+    return _aaClassifyTraceError(error, { endpoint, observedAt: options.observedAt });
+  }
+}
+
+async function _aaRequestFullTrace(options = {}) {
+  const endpoint = 'trace/get';
+  const denied = _aaRoleCapability(options.hass, endpoint, options.observedAt);
+  if (denied) return denied;
+  if (options.signal?.aborted) return _aaAbortedCapability(endpoint, options.observedAt);
+  try {
+    const payload = await _aaAbortRace(options.hass.callWS({
+      type: 'trace/get', domain: 'automation', item_id: options.itemId, run_id: options.runId
+    }), options.signal);
+    if (options.signal?.aborted) return _aaAbortedCapability(endpoint, options.observedAt);
+    return _aaNormalizeFull(payload, {
+      expectedItemId: options.itemId,
+      observedAt: options.observedAt
+    });
+  } catch (error) {
+    if (options.signal?.aborted || _aaIsAbortMarker(error)) {
+      return _aaAbortedCapability(endpoint, options.observedAt);
+    }
+    return _aaClassifyTraceError(error, { endpoint, observedAt: options.observedAt });
+  }
+}
+
+async function _aaRequestLatestTrace(options = {}) {
+  const listed = await _aaRequestTraceList(options);
+  if (listed.status !== 'available') return listed;
+  const latest = listed.data.runs.find(run => run.kind === 'execution');
+  if (!latest) return _aaTraceCapability('no_data', options.observedAt, {
+    endpoint: 'trace/get', error_code: 'no_execution_trace'
+  });
+  if (options.signal?.aborted) return _aaAbortedCapability('trace/get', options.observedAt);
+  return _aaRequestFullTrace({ ...options, runId: latest.run_id });
+}
+
+function _aaIsNormalizedRunSummary(run) {
+  return _aaIsPlainObject(run)
+    && _aaHasOnlyFields(run, new Set([
+      'run_id', 'item_id', 'run_state', 'script_execution', 'kind',
+      'started_at', 'finished_at', 'run_duration_ms'
+    ]))
+    && typeof run.run_id === 'string' && Boolean(run.run_id)
+    && typeof run.item_id === 'string' && Boolean(run.item_id)
+    && (run.run_state === 'running' || run.run_state === 'stopped')
+    && (run.script_execution === null || typeof run.script_execution === 'string')
+    && (run.kind === 'execution' || run.kind === 'non_execution')
+    && _aaParseTimestamp(run.started_at) !== null
+    && (run.finished_at === null || _aaParseTimestamp(run.finished_at) !== null)
+    && (run.run_duration_ms === null
+      || (Number.isFinite(run.run_duration_ms) && run.run_duration_ms >= 0));
+}
+
+function _aaPaginateTraceRuns(runs, options = {}) {
+  const observedAt = options.observedAt;
+  let validRuns = false;
+  try {
+    validRuns = _aaInspectTracePayload(runs, { maxRootArray: AA_TRACE_MAX_GLOBAL_RUNS }).ok
+      && Array.isArray(runs) && runs.length <= AA_TRACE_MAX_GLOBAL_RUNS
+      && runs.every(_aaIsNormalizedRunSummary);
+  } catch (_error) {}
+  if (!validRuns || !Number.isInteger(options.limit)
+    || options.limit < 1 || options.limit > 50) {
+    return _aaTraceCapability('malformed', observedAt, { endpoint: 'local/page', error_code: 'malformed' });
+  }
+  let offset = 0;
+  if (options.cursor !== null && options.cursor !== undefined) {
+    const match = /^aatc1\.(0|[1-9]\d*)$/.exec(options.cursor);
+    if (!match) return _aaTraceCapability('malformed', observedAt, { endpoint: 'local/page', error_code: 'invalid_cursor' });
+    offset = Number(match[1]);
+    if (!Number.isSafeInteger(offset) || offset >= runs.length) {
+      return _aaTraceCapability('malformed', observedAt, { endpoint: 'local/page', error_code: 'invalid_cursor' });
+    }
+  }
+  const items = runs.slice(offset, offset + options.limit);
+  const nextOffset = offset + items.length;
+  const nextCursor = nextOffset < runs.length ? `aatc1.${nextOffset}` : null;
+  return _aaTraceCapability('available', observedAt, {
+    endpoint: 'local/page', schema: 'aatc1', item_count: items.length
+  }, { items, next_cursor: nextCursor });
+}
+
+function _aaIsComparableTraceData(data) {
+  if (!_aaIsPlainObject(data) || !_aaInspectTracePayload(data).ok
+    || !_aaHasOnlyFields(data, new Set([
+      'run_id', 'item_id', 'run_state', 'kind', 'run_duration_ms', 'nodes'
+    ]))
+    || typeof data.run_id !== 'string' || !data.run_id
+    || typeof data.item_id !== 'string' || !data.item_id
+    || (data.run_state !== 'running' && data.run_state !== 'stopped')
+    || (data.kind !== 'execution' && data.kind !== 'non_execution')
+    || !(data.run_duration_ms === null
+      || (Number.isFinite(data.run_duration_ms) && data.run_duration_ms >= 0))
+    || !Array.isArray(data.nodes)) return false;
+  return data.nodes.every(node => _aaIsPlainObject(node)
+    && _aaHasOnlyFields(node, new Set(['path', 'ordinal', 'status', 'offset_ms']))
+    && typeof node.path === 'string' && AA_TRACE_PATH_PATTERN.test(node.path)
+    && Number.isInteger(node.ordinal) && node.ordinal >= 0
+    && ['pass', 'error', 'changed', 'skipped'].includes(node.status)
+    && Number.isFinite(node.offset_ms) && node.offset_ms >= 0);
+}
+
+function _aaCompareTraceRuns(baseline, current, options = {}) {
+  const observedAt = options.observedAt;
+  if (!_aaIsComparableTraceData(baseline) || !_aaIsComparableTraceData(current)) {
+    return _aaTraceCapability('malformed', observedAt, { endpoint: 'local/compare', error_code: 'malformed' });
+  }
+  if (baseline.kind !== 'execution' || current.kind !== 'execution') {
+    return _aaTraceCapability('no_data', observedAt, {
+      endpoint: 'local/compare', error_code: 'non_execution_trace'
+    });
+  }
+  const minimumDelta = Number.isFinite(options.minimumDeltaMs) ? Math.max(0, options.minimumDeltaMs) : 20;
+  const minimumRatio = Number.isFinite(options.minimumRatio) ? Math.max(1, options.minimumRatio) : 1.25;
+  const baselineByKey = new Map(baseline.nodes.map(node => [`${node.path}#${node.ordinal}`, node]));
+  const currentByKey = new Map(current.nodes.map(node => [`${node.path}#${node.ordinal}`, node]));
+  const categories = { added: [], removed: [], reached_later: [], reached_earlier: [], unchanged: [] };
+  const allKeys = [...new Set([...baselineByKey.keys(), ...currentByKey.keys()])].sort((leftKey, rightKey) => {
+    const left = baselineByKey.get(leftKey) || currentByKey.get(leftKey);
+    const right = baselineByKey.get(rightKey) || currentByKey.get(rightKey);
+    return _aaCompareText(left.path, right.path) || left.ordinal - right.ordinal;
+  });
+  for (const key of allKeys) {
+    const before = baselineByKey.get(key);
+    const after = currentByKey.get(key);
+    if (!before) { categories.added.push({ path: after.path, ordinal: after.ordinal }); continue; }
+    if (!after) { categories.removed.push({ path: before.path, ordinal: before.ordinal }); continue; }
+    const delta = after.offset_ms - before.offset_ms;
+    const ratio = before.offset_ms === 0 ? (after.offset_ms === 0 ? 1 : Infinity) : after.offset_ms / before.offset_ms;
+    const item = { path: after.path, ordinal: after.ordinal, delta_ms: delta };
+    if (delta >= minimumDelta && ratio >= minimumRatio) categories.reached_later.push(item);
+    else if (delta <= -minimumDelta && (ratio <= 1 / minimumRatio || after.offset_ms === 0)) categories.reached_earlier.push(item);
+    else categories.unchanged.push(item);
+  }
+  let runClassification = 'unchanged';
+  let runDelta = null;
+  if (baseline.run_duration_ms !== null && current.run_duration_ms !== null) {
+    runDelta = current.run_duration_ms - baseline.run_duration_ms;
+    const ratio = baseline.run_duration_ms === 0
+      ? (current.run_duration_ms === 0 ? 1 : Infinity)
+      : current.run_duration_ms / baseline.run_duration_ms;
+    if (runDelta >= minimumDelta && ratio >= minimumRatio) runClassification = 'slower';
+    else if (runDelta <= -minimumDelta && (ratio <= 1 / minimumRatio || current.run_duration_ms === 0)) runClassification = 'faster';
+  }
+  return _aaTraceCapability('available', observedAt, {
+    endpoint: 'local/compare', schema: 'ha-trace-comparison-v1', node_count: allKeys.length
+  }, {
+    run: { classification: runClassification, delta_ms: runDelta },
+    nodes: categories
+  });
+}
+
+function _aaIsDiagnosticTraceCapability(capability) {
+  if (!_aaIsPlainObject(capability) || !_aaInspectTracePayload(capability).ok
+    || !_aaHasOnlyFields(capability, new Set(['status', 'source', 'observed_at', 'evidence', 'data']))
+    || capability.status !== 'available' || capability.source !== AA_TRACE_SOURCE
+    || !_aaIsPlainObject(capability.evidence)
+    || !_aaHasOnlyFields(capability.evidence, new Set(['endpoint', 'schema', 'node_count', 'run_state']))
+    || capability.evidence.endpoint !== 'trace/get'
+    || (capability.evidence.schema !== 'ha-trace-v1'
+      && capability.evidence.schema !== 'ha-trace-legacy-path-v0')
+    || !_aaIsPlainObject(capability.data)
+    || !_aaHasOnlyFields(capability.data, new Set([
+      'run_id', 'item_id', 'run_state', 'kind', 'run_duration_ms', 'nodes'
+    ]))
+    || typeof capability.data.run_id !== 'string' || !capability.data.run_id
+    || typeof capability.data.item_id !== 'string' || !capability.data.item_id
+    || (capability.data.run_state !== 'running' && capability.data.run_state !== 'stopped')
+    || (capability.data.kind !== 'execution' && capability.data.kind !== 'non_execution')
+    || !(capability.data.run_duration_ms === null
+      || (Number.isFinite(capability.data.run_duration_ms) && capability.data.run_duration_ms >= 0))
+    || !Array.isArray(capability.data.nodes)) return false;
+  return capability.data.nodes.every(node => _aaIsPlainObject(node)
+    && _aaHasOnlyFields(node, new Set(['path', 'ordinal', 'status', 'offset_ms']))
+    && typeof node.path === 'string' && AA_TRACE_PATH_PATTERN.test(node.path)
+    && Number.isInteger(node.ordinal) && node.ordinal >= 0
+    && ['pass', 'error', 'changed', 'skipped'].includes(node.status)
+    && Number.isFinite(node.offset_ms) && node.offset_ms >= 0);
+}
+
+function _aaIsDiagnosticComparison(comparison) {
+  if (comparison === null || comparison === undefined) return true;
+  if (!_aaIsPlainObject(comparison) || !_aaInspectTracePayload(comparison).ok
+    || !_aaHasOnlyFields(comparison, new Set(['status', 'source', 'observed_at', 'evidence', 'data']))
+    || comparison.status !== 'available' || comparison.source !== AA_TRACE_SOURCE
+    || !_aaIsPlainObject(comparison.evidence)
+    || !_aaHasOnlyFields(comparison.evidence, new Set(['endpoint', 'schema', 'node_count']))
+    || comparison.evidence.endpoint !== 'local/compare'
+    || comparison.evidence.schema !== 'ha-trace-comparison-v1'
+    || !_aaIsPlainObject(comparison.data)
+    || !_aaHasOnlyFields(comparison.data, new Set(['run', 'nodes']))
+    || !_aaIsPlainObject(comparison.data.run)
+    || !_aaHasOnlyFields(comparison.data.run, new Set(['classification', 'delta_ms']))
+    || !['slower', 'faster', 'unchanged'].includes(comparison.data.run.classification)
+    || !(comparison.data.run.delta_ms === null || Number.isFinite(comparison.data.run.delta_ms))
+    || !_aaIsPlainObject(comparison.data.nodes)
+    || !_aaHasOnlyFields(comparison.data.nodes, new Set([
+      'added', 'removed', 'reached_later', 'reached_earlier', 'unchanged'
+    ]))) return false;
+  return ['added', 'removed', 'reached_later', 'reached_earlier', 'unchanged'].every(category => {
+    const values = comparison.data.nodes[category];
+    return Array.isArray(values) && values.every(node => _aaIsPlainObject(node)
+      && _aaHasOnlyFields(node, new Set(['path', 'ordinal', 'delta_ms']))
+      && typeof node.path === 'string' && AA_TRACE_PATH_PATTERN.test(node.path)
+      && Number.isInteger(node.ordinal) && node.ordinal >= 0
+      && (!Object.hasOwn(node, 'delta_ms') || Number.isFinite(node.delta_ms)));
+  });
+}
+
+function _aaBuildDiagnostic(options = {}) {
+  const capability = options.capability;
+  const comparison = options.comparison;
+  let valid = false;
+  try {
+    valid = _aaIsDiagnosticTraceCapability(capability) && _aaIsDiagnosticComparison(comparison);
+  } catch (_error) {
+    valid = false;
+  }
+  const data = valid ? capability.data : null;
+  if (!data) {
+    return { schema: 'ha-automation-analyzer-diagnostic-v1', generated_at: _aaTraceObservedAt(options.generatedAt), status: 'unavailable' };
+  }
+  const diagnostic = {
+    schema: 'ha-automation-analyzer-diagnostic-v1',
+    generated_at: _aaTraceObservedAt(options.generatedAt),
+    capability: {
+      status: capability.status,
+      source: capability.source,
+      schema: capability.evidence?.schema || null
+    },
+    run: {
+      alias: 'run_001',
+      state: data.run_state,
+      kind: data.kind,
+      duration_ms: data.run_duration_ms,
+      nodes: data.nodes.map(node => ({
+        path: node.path,
+        ordinal: node.ordinal,
+        status: node.status,
+        offset_ms: node.offset_ms
+      }))
+    }
+  };
+  if (comparison?.status === 'available') {
+    diagnostic.comparison = {
+      run: {
+        classification: comparison.data.run.classification,
+        delta_ms: comparison.data.run.delta_ms
+      },
+      nodes: Object.fromEntries(
+        ['added', 'removed', 'reached_later', 'reached_earlier', 'unchanged'].map(category => [
+          category,
+          comparison.data.nodes[category].map(node => ({
+            path: node.path,
+            ordinal: node.ordinal,
+            ...(Object.hasOwn(node, 'delta_ms') ? { delta_ms: node.delta_ms } : {})
+          }))
+        ])
+      )
+    };
+  }
+  return diagnostic;
+}
+
+function _aaDownloadDiagnostic(diagnostic, adapters = {}) {
+  const windowAdapter = adapters.window || window;
+  const documentAdapter = adapters.document || document;
+  const payload = JSON.stringify(diagnostic, null, 2) + '\n';
+  const blob = new windowAdapter.Blob([payload], { type: 'application/json' });
+  const url = windowAdapter.URL.createObjectURL(blob);
+  try {
+    const anchor = documentAdapter.createElement('a');
+    anchor.href = url;
+    anchor.download = 'ha-automation-analyzer-diagnostic.json';
+    anchor.rel = 'noopener';
+    anchor.click();
+  } finally {
+    windowAdapter.URL.revokeObjectURL(url);
+  }
+}
+
+const AA_TRACE_CONTRACT = Object.freeze({
+  normalizeList: _aaNormalizeList,
+  normalizeFull: _aaNormalizeFull,
+  paginate: _aaPaginateTraceRuns,
+  compare: _aaCompareTraceRuns,
+  classifyError: _aaClassifyTraceError,
+  requestList: _aaRequestTraceList,
+  requestFull: _aaRequestFullTrace,
+  requestLatest: _aaRequestLatestTrace,
+  buildDiagnostic: _aaBuildDiagnostic,
+  downloadDiagnostic: _aaDownloadDiagnostic
+});
 
 /* ===== HA Tools split — inline shared infrastructure ===== */
 // Bento Design System CSS (inline copy — keeps tool standalone)
@@ -550,8 +1287,6 @@ class HAAutomationAnalyzer extends HTMLElement {
     this._toolId = this.tagName.toLowerCase().replace('ha-', '');
     this.currentTab = "overview";
     this.automationStats = new Map();
-    this.automationHistory = new Map();
-    this.automationTraces = new Map();
     this.executionTimes = [];
     this.triggerTypes = new Map();
     this.failedAutomations = new Map();
@@ -560,15 +1295,18 @@ class HAAutomationAnalyzer extends HTMLElement {
     this._chartJsLoaded = false;
     this._isLoading = true;
     this._lastUpdated = null;
-    this._apiCache = new Map();
-    this._cacheTimestamps = new Map();
-    this._cacheTTL = 60000;
     this._lastRenderTime = 0;
     this._renderScheduled = false;
     this._renderTimer = null;
     this._refreshTimer = null;
     this._firstHassRender = false;
     this._loadingInProgress = false;
+    this._lifecycleEpoch = 0;
+    this._activeLoadToken = null;
+    this._activeTimelineToken = null;
+    this._activeTraceStatsToken = null;
+    this._pendingLoad = false;
+    this._suppressTimelineAutoFetch = false;
     this._traceNoticeDismissed = false;
     this._loadingPhase = "";
     this._filterText = "";
@@ -583,14 +1321,43 @@ class HAAutomationAnalyzer extends HTMLElement {
     this._timelineData = null;         // fetched trace object
     this._timelineError = null;        // error string or null
     this._timelineLoading = false;     // true while fetching
+    this._timelineRuns = [];
+    this._timelineSelectedRunId = null;
+    this._timelineBaselineRunId = null;
+    this._timelineBaselineData = null;
+    this._timelineComparison = null;
+    this._timelineCompareLoading = false;
+    this._timelinePageCursor = null;
+    this._timelinePageSize = 20;
+    // Global trace summaries are admin-only and loaded only after an explicit click.
+    this._traceStatsCapability = null;
+    this._traceStatsCache = null;
+    this._traceStatsLoading = false;
+    this._traceStatsBaseMetrics = null;
+    this._lastHassConnection = null;
+    this._lastTraceRole = 'unknown';
+    this._lastAutomationSetSignature = '';
   }
 
   setConfig(config) {
+    const wasAutoRefreshEnabled = this.config?.auto_refresh !== false;
+    const safeConfig = config && typeof config === 'object' ? config : {};
     this.config = {
-      title: "Automation Analyzer",
-      show_disabled: true,
-      ...config
+      title: typeof safeConfig.title === 'string' ? safeConfig.title : "Automation Analyzer",
+      show_disabled: typeof safeConfig.show_disabled === 'boolean' ? safeConfig.show_disabled : true,
+      auto_refresh: typeof safeConfig.auto_refresh === 'boolean' ? safeConfig.auto_refresh : true
     };
+    if (!wasAutoRefreshEnabled && this.config.auto_refresh && this.isConnected && this._hass) {
+      if (this._renderTimer) clearTimeout(this._renderTimer);
+      this._renderTimer = null;
+      this._renderScheduled = false;
+      if (this._loadingInProgress) {
+        this._activeLoadToken = null;
+        this._pendingLoad = true;
+      } else {
+        this._loadAndRender();
+      }
+    }
   }
 
   set hass(hass) {
@@ -606,16 +1373,68 @@ class HAAutomationAnalyzer extends HTMLElement {
       this.classList.toggle('bento-dark', _d);
     } catch (e) {}
 
-    if (hass?.language) this._lang = hass.language.startsWith('pl') ? 'pl' : 'en';    this._hass = hass;
-    if (!hass) return;
+    if (hass?.language) this._lang = hass.language.startsWith('pl') ? 'pl' : 'en';
+    const previousHass = this._hass;
+    const hassChanged = previousHass !== hass;
+    const nextConnection = hass?.connection || null;
+    const nextRole = hass?.user && typeof hass.user.is_admin === 'boolean'
+      ? (hass.user.is_admin ? 'admin' : 'non_admin') : 'unknown';
+    let nextAutomationSetSignature = '';
+    try {
+      nextAutomationSetSignature = Object.entries(hass?.states || {})
+        .filter(([entityId]) => entityId.startsWith('automation.'))
+        .map(([entityId, entity]) => `${entityId}\u0000${entity.attributes?.id || ''}`)
+        .sort()
+        .join('\u0001');
+    } catch (_error) {}
+    const traceSnapshotChanged = hassChanged
+      || this._lastHassConnection !== nextConnection
+      || this._lastTraceRole !== nextRole
+      || this._lastAutomationSetSignature !== nextAutomationSetSignature;
+    const hasTimelineState = Boolean(
+      this._activeTimelineToken || this._timelineLoading || this._timelineData
+      || this._timelineError || this._selectedTimelineId
+    );
+    this._hass = hass;
+    if (traceSnapshotChanged) this._invalidateTraceStatistics();
+    this._lastHassConnection = nextConnection;
+    this._lastTraceRole = nextRole;
+    this._lastAutomationSetSignature = nextAutomationSetSignature;
+    let timelineInvalidated = false;
+    if (traceSnapshotChanged && hasTimelineState) {
+      this._abortTimelinePipeline();
+      this._timelineLoading = false;
+      this._timelineData = null;
+      this._timelineError = null;
+      this._selectedTimelineId = null;
+      this._resetTimelineRunState();
+      this._suppressTimelineAutoFetch = true;
+      timelineInvalidated = true;
+    }
+    if (!hass || !this.isConnected) return;
+    if (timelineInvalidated || traceSnapshotChanged) this.render();
+    if (hassChanged && this._loadingInProgress) {
+      this._activeLoadToken = null;
+      this._pendingLoad = true;
+      return;
+    }
     const now = Date.now();
     if (!this._firstHassRender) {
       this._firstHassRender = true;
       this._loadAndRender();
       return;
     }
-    // Respect auto-refresh toggle from HA Tools panel
-    if (!this._isAutoRefreshEnabled()) return;
+    // Respect this card's own explicit auto_refresh configuration.
+    if (!this._isAutoRefreshEnabled()) {
+      return;
+    }
+    if (timelineInvalidated || this._suppressTimelineAutoFetch) {
+      if (this._renderTimer) clearTimeout(this._renderTimer);
+      this._renderTimer = null;
+      this._renderScheduled = false;
+      this._loadAndRender();
+      return;
+    }
     if (now - (this._lastRenderTime || 0) < 30000) {
       if (!this._renderScheduled) {
         this._renderScheduled = true;
@@ -632,6 +1451,24 @@ class HAAutomationAnalyzer extends HTMLElement {
   }
 
   get hass() { return this._hass; }
+
+  connectedCallback() {
+    this._lifecycleEpoch += 1;
+    const epoch = this._lifecycleEpoch;
+    this._activeLoadToken = null;
+    this._abortTimelinePipeline();
+    this._invalidateTraceStatistics();
+    this._pendingLoad = false;
+    this._suppressTimelineAutoFetch = false;
+    this._loadingInProgress = false;
+    this._firstHassRender = false;
+    this._lastRenderTime = 0;
+    queueMicrotask(() => {
+      if (!this.isConnected || this._lifecycleEpoch !== epoch || !this._hass || this._firstHassRender) return;
+      this._firstHassRender = true;
+      this._loadAndRender();
+    });
+  }
 
   get _t() {
     const T = {
@@ -659,14 +1496,14 @@ class HAAutomationAnalyzer extends HTMLElement {
         totalLabel: '\u0141\u0105cznie',
         active: 'Aktywnych',
         disabledLabel: 'Wy\u0142\u0105czonych',
-        errorsLabel: 'B\u0142\u0119d\u00f3w',
+        errorsLabel: 'B\u0142\u0119dy w trasach',
         searchPlaceholder: 'Szukaj automatyzacji\u2026',
-        runsTodayOption: 'Uruchomienia dzi\u015B',
+        runsTodayOption: 'Zachowane dzi\u015B',
         executionTime: 'Czas wykonania',
         descendingAscending: 'Malej\u0105co/Rosn\u0105co',
         allTime: 'Ca\u0142y czas',
         today: 'Dzi\u015B',
-        mostActiveTodayTitle: 'Najaktywniejsze dzi\u015B',
+        mostActiveTodayTitle: 'Aktywno\u015B\u0107 zachowanych tras',
         executionTimeDistribution: 'Rozk\u0142ad czas\u00f3w wykonania',
         noExecutionTimeData: 'Brak danych o czasach wykonania \u2014 zbyt ma\u0142o uruchomie\u0144 z pe\u0142nymi danymi',
         noTriggerData: 'Brak danych o wyzwalaczach \u2014 konfiguracja automatyzacji niedost\u0119pna',
@@ -679,12 +1516,11 @@ class HAAutomationAnalyzer extends HTMLElement {
         withErrors: 'Z b\u0142\u0119dami',
         automationsWithErrors: 'Automatyzacje z b\u0142\u0119dami',
         disabledAutomations: 'Wy\u0142\u0105czone automatyzacje',
-        tracesNotice: 'Domy\u015blnie HA przechowuje tylko <strong>5 ostatnich tras</strong> na automatyzacj\u0119. Trasy s\u0105 <strong>czyszczone po restarcie</strong> HA \u2014 po ponownym uruchomieniu wszystkie zapisane trace zostan\u0105 usuni\u0119te. Mo\u017cesz zwi\u0119kszy\u0107 limit w <a id="trace-viewer-link">Trace Viewer</a> (HA Tools \u2192 Ustawienia).',
-        tracesNoticeDetail: '\u2139\uFE0F Aby zachowa\u0107 wi\u0119cej danych o wykonaniach, ustaw stored_traces w konfiguracji HA lub u\u017cyj sekcji ustawie\u0144 w Trace Viewer.',
+        tracesNotice: 'Domy\u015blnie HA przechowuje tylko <strong>5 ostatnich tras</strong> na automatyzacj\u0119. Trasy s\u0105 <strong>czyszczone po restarcie</strong> HA. Limit mo\u017cesz zwi\u0119kszy\u0107 przez <code>stored_traces</code> w konfiguracji automatyzacji.',
+        tracesNoticeDetail: '\u2139\uFE0F Trace s\u0105 dost\u0119pne tylko dla administratora Home Assistanta i pozostaj\u0105 lokalnie w przegl\u0105darce.',
         closeButton: 'Zamknij',
         loadingData: '\u0141adowanie danych...',
         fetchingTraces: 'Pobieranie tras wykonania...',
-        fetchingHistory: 'Pobieranie historii wykonania...',
         never: 'nigdy',
         minutesAgo: 'm temu',
         minutesAgoEn: 'm ago',
@@ -694,11 +1530,11 @@ class HAAutomationAnalyzer extends HTMLElement {
         daysAgoSuffixEn: 'd ago',
         secondsAgo: 's temu',
         secondsAgoEn: 's ago',
-        todayCount: 'Dzisiejsze uruchomienia',
+        todayCount: 'Zachowane uruchomienia dzi\u015B',
         averageTime: '\u015Aredni czas',
-        todayRunsOption: 'Uruchomienia dzi\u015B',
-        todayRunsOptionEn: 'Runs today',
-        noFailedLabel: '\u2705 Brak nieudanych automatyzacji',
+        todayRunsOption: 'Zachowane dzi\u015B',
+        todayRunsOptionEn: 'Retained today',
+        noFailedLabel: '\u2705 Brak b\u0142\u0119d\u00f3w w zachowanych trasach',
         noDisabledLabel: '\u2705 Brak wy\u0142\u0105czonych automatyzacji',
         noStaleLabel: '\u2705 Wszystkie automatyzacje by\u0142y ostatnio aktywne',
         sevenDays: '7 dni',
@@ -708,15 +1544,20 @@ class HAAutomationAnalyzer extends HTMLElement {
         state: 'Stan',
         descending: 'Malejąco',
         ascending: 'Rosnąco',
-        dailyExecutions: 'Dzienne wykonania (14 dni)',
+        dailyExecutions: 'Zachowane wykonania (14 dni)',
+        noDailyTraceData: 'Wczytaj statystyki tras, aby zobaczy\u0107 zachowane wykonania z ostatnich 14 dni.',
+        noTraceOptimizationData: 'Wczytaj statystyki tras, aby oceni\u0107 czasy i b\u0142\u0119dy w zachowanych wykonaniach.',
+        noRetainedActivityData: 'Wczytaj statystyki tras w zak\u0142adce Wydajno\u015B\u0107 lub Optymalizacja, aby por\u00f3wna\u0107 zachowane wykonania.',
+        systemHealthScope: 'Na podstawie stan\u00f3w i dost\u0119pnych danych',
         statistics: 'Statystyki',
-        avgTimeLabel: '\u015Ar. czas',
-        withTimeData: 'Z danymi o czasie',
+        avgTimeLabel: '\u015Ar. zachowanego wykonania',
+        withTimeData: 'Zachowanych zako\u0144czonych',
+        retainedRuns: 'Zachowane wykonania',
         triggerTypes: 'Typ\u00f3w wyzwalaczy',
-        noSlowAutomations: '\u2705 Brak wolnych automatyzacji',
+        noSlowAutomations: '\u2705 Brak wolnych automatyzacji w zachowanych trasach',
         noFailedAutomations2: '\u2705 Brak nieudanych automatyzacji',
-        slowAutomationsTitle: '\u26A0\uFE0F Wolne automatyzacje (&gt;800ms)',
-        failedAutomationsTitle: '\u274C Automatyzacje z b\u0142\u0119dami',
+        slowAutomationsTitle: '\u26A0\uFE0F Wolne zachowane wykonania (&gt;800ms)',
+        failedAutomationsTitle: '\u274C B\u0142\u0119dy w zachowanych trasach',
         disabledAutomationsTitle: '\u23F8\uFE0F Wy\u0142\u0105czone automatyzacje',
         inactiveAutomationsTitle: '\uD83D\uDCA4 Nieaktywne automatyzacje (&gt;30 dni)',
         slowStat: 'Wolnych (&gt;800ms)',
@@ -731,21 +1572,32 @@ class HAAutomationAnalyzer extends HTMLElement {
         phaseLoadingAutomations: 'Wczytywanie automatyzacji...',
         phaseLoadingMetadata: 'Pobieranie metadanych...',
         phaseLoadingTraces: 'Pobieranie tras wykonania...',
-        phaseLoadingHistory: 'Pobieranie historii wykonania...',
         systemHealth: 'Stan systemu automatyzacji',
         triggerTypesTitle: 'Typy wyzwalaczy',
         tabTimeline: 'Oś czasu',
         timelineTitle: 'Linia czasu automatyzacji',
         timelineSelectPrompt: 'Wybierz automatyzację, aby zobaczyć jej ostatnią trasę wykonania.',
         timelineLoadError: 'Nie można pobrać danych trasy.',
-        timelineNoTrace: 'Brak dostępnej trasy. Włącz śledzenie automatyzacji w konfiguracji HA.',
+        timelineNoTrace: 'Brak zachowanej trasy dla tej automatyzacji.',
         timelineLoading: 'Pobieranie trasy…',
         timelinePass: 'OK',
         timelineFail: 'Błąd',
         timelineSkipped: 'Pominięto',
         timelineChanged: 'Zmieniono',
         timelineLastTriggered: 'Ostatnie uruchomienie',
-        timelineTracingTip: 'Włącz śledzenie: konfiguracja → automatyzacje → edytuj → włącz śledzenie.',
+        timelineTracingTip: 'Uruchom automatyzację lub zwiększ stored_traces w jej konfiguracji, aby zachować więcej przebiegów.',
+        timelineRun: 'Wykonanie',
+        timelineBaseline: 'Wykonanie bazowe',
+        timelineCompare: 'Porównaj',
+        timelineComparing: 'Porównywanie…',
+        timelineExport: 'Eksport diagnostyczny',
+        traceStatsLoad: 'Wczytaj statystyki tras',
+        traceStatsReload: 'Odśwież statystyki tras',
+        traceStatsLoading: 'Wczytywanie statystyk tras…',
+        traceStatsHint: 'Statystyki tras nie są pobierane automatycznie. Wczytaj je świadomie, gdy są potrzebne.',
+        traceStatsLoaded: 'Wczytano podsumowania tras',
+        traceStatsNoData: 'Home Assistant nie przechowuje obecnie żadnych podsumowań tras.',
+        traceStatsAdmin: 'Statystyki tras wymagają konta administratora Home Assistanta.',
       },
       en: {
         title: 'Automation Analyzer',
@@ -771,14 +1623,14 @@ class HAAutomationAnalyzer extends HTMLElement {
         totalLabel: 'Total',
         active: 'Active',
         disabledLabel: 'Disabled',
-        errorsLabel: 'Errors',
+        errorsLabel: 'Trace errors',
         searchPlaceholder: 'Search automations\u2026',
-        runsTodayOption: 'Runs today',
+        runsTodayOption: 'Retained today',
         executionTime: 'Execution time',
         descendingAscending: 'Descending/Ascending',
         allTime: 'All time',
         today: 'Today',
-        mostActiveTodayTitle: 'Most active today',
+        mostActiveTodayTitle: 'Retained trace activity',
         executionTimeDistribution: 'Execution time distribution',
         noExecutionTimeData: 'No execution time data \u2014 too few runs with complete data',
         noTriggerData: 'No trigger data \u2014 automation configuration unavailable',
@@ -791,12 +1643,11 @@ class HAAutomationAnalyzer extends HTMLElement {
         withErrors: 'With errors',
         automationsWithErrors: 'Automations with errors',
         disabledAutomations: 'Disabled automations',
-        tracesNotice: 'By default HA stores only the <strong>last 5 traces</strong> per automation. Traces are <strong>cleared on restart</strong> \u2014 after reboot all stored traces will be removed. You can increase the limit in <a id="trace-viewer-link">Trace Viewer</a> (HA Tools \u2192 Settings).',
-        tracesNoticeDetail: '\u2139\uFE0F To keep more execution data, set stored_traces in HA config or use the Settings section in Trace Viewer.',
+        tracesNotice: 'By default HA stores only the <strong>last 5 traces</strong> per automation. Traces are <strong>cleared on restart</strong>. You can increase the limit with <code>stored_traces</code> in the automation configuration.',
+        tracesNoticeDetail: '\u2139\uFE0F Traces require a Home Assistant administrator and remain local to your browser.',
         closeButton: 'Close',
         loadingData: 'Loading data...',
         fetchingTraces: 'Fetching execution traces...',
-        fetchingHistory: 'Fetching execution history...',
         never: 'never',
         minutesAgo: 'm ago',
         minutesAgoEn: 'm ago',
@@ -806,11 +1657,11 @@ class HAAutomationAnalyzer extends HTMLElement {
         daysAgoSuffixEn: 'd ago',
         secondsAgo: 's ago',
         secondsAgoEn: 's ago',
-        todayCount: 'Today\'s runs',
+        todayCount: 'Retained runs today',
         averageTime: 'Average time',
-        todayRunsOption: 'Runs today',
-        todayRunsOptionEn: 'Runs today',
-        noFailedLabel: '\u2705 No failed automations',
+        todayRunsOption: 'Retained today',
+        todayRunsOptionEn: 'Retained today',
+        noFailedLabel: '\u2705 No errors in retained traces',
         noDisabledLabel: '\u2705 No disabled automations',
         noStaleLabel: '\u2705 All automations were recently active',
         sevenDays: '7 days',
@@ -820,15 +1671,20 @@ class HAAutomationAnalyzer extends HTMLElement {
         state: 'State',
         descending: 'Descending',
         ascending: 'Ascending',
-        dailyExecutions: 'Daily executions (14 days)',
+        dailyExecutions: 'Retained executions (14 days)',
+        noDailyTraceData: 'Load trace statistics to see retained executions from the last 14 days.',
+        noTraceOptimizationData: 'Load trace statistics to evaluate timings and errors in retained executions.',
+        noRetainedActivityData: 'Load trace statistics in Performance or Optimization to compare retained executions.',
+        systemHealthScope: 'Based on states and available data',
         statistics: 'Statistics',
-        avgTimeLabel: 'Avg. time',
-        withTimeData: 'With time data',
+        avgTimeLabel: 'Avg. retained run',
+        withTimeData: 'Retained completed',
+        retainedRuns: 'Retained runs',
         triggerTypes: 'Trigger types',
-        noSlowAutomations: '\u2705 No slow automations',
+        noSlowAutomations: '\u2705 No slow automations in retained traces',
         noFailedAutomations2: '\u2705 No failed automations',
-        slowAutomationsTitle: '\u26A0\uFE0F Slow automations (&gt;800ms)',
-        failedAutomationsTitle: '\u274C Automations with errors',
+        slowAutomationsTitle: '\u26A0\uFE0F Slow retained executions (&gt;800ms)',
+        failedAutomationsTitle: '\u274C Errors in retained traces',
         disabledAutomationsTitle: '\u23F8\uFE0F Disabled automations',
         inactiveAutomationsTitle: '\uD83D\uDCA4 Inactive automations (&gt;30 days)',
         slowStat: 'Slow (&gt;800ms)',
@@ -843,21 +1699,32 @@ class HAAutomationAnalyzer extends HTMLElement {
         phaseLoadingAutomations: 'Loading automations...',
         phaseLoadingMetadata: 'Fetching metadata...',
         phaseLoadingTraces: 'Fetching execution traces...',
-        phaseLoadingHistory: 'Fetching execution history...',
         systemHealth: 'Automation system health',
         triggerTypesTitle: 'Trigger Types',
         tabTimeline: 'Timeline',
         timelineTitle: 'Automation trace timeline',
         timelineSelectPrompt: 'Select an automation to view its latest trace.',
         timelineLoadError: 'Could not fetch trace data.',
-        timelineNoTrace: 'No trace available. Enable automation tracing in HA configuration.',
+        timelineNoTrace: 'No retained trace is available for this automation.',
         timelineLoading: 'Fetching trace…',
         timelinePass: 'Pass',
         timelineFail: 'Error',
         timelineSkipped: 'Skipped',
         timelineChanged: 'Changed',
         timelineLastTriggered: 'Last triggered',
-        timelineTracingTip: 'Enable tracing: Configuration → Automations → Edit → enable tracing.',
+        timelineTracingTip: 'Run the automation or increase stored_traces in its configuration to retain more runs.',
+        timelineRun: 'Run',
+        timelineBaseline: 'Baseline run',
+        timelineCompare: 'Compare',
+        timelineComparing: 'Comparing…',
+        timelineExport: 'Diagnostic export',
+        traceStatsLoad: 'Load trace statistics',
+        traceStatsReload: 'Refresh trace statistics',
+        traceStatsLoading: 'Loading trace statistics…',
+        traceStatsHint: 'Trace statistics are not fetched automatically. Load them explicitly when needed.',
+        traceStatsLoaded: 'Trace summaries loaded',
+        traceStatsNoData: 'Home Assistant does not currently retain any trace summaries.',
+        traceStatsAdmin: 'Trace statistics require a Home Assistant administrator account.',
       },
     };
     return T[this._lang] || T.en;
@@ -866,33 +1733,40 @@ class HAAutomationAnalyzer extends HTMLElement {
   _sanitize(s) { try { return decodeURIComponent(escape(s)); } catch(e) { return s; } }
 
   _isAutoRefreshEnabled() {
-    try {
-      let el = this;
-      while (el) {
-        if (el.tagName && el.tagName.toLowerCase() === "ha-tools-panel") {
-          const cb = el.shadowRoot && el.shadowRoot.getElementById("autoRefreshCb");
-          if (cb) return cb.checked;
-        }
-        const root = el.getRootNode ? el.getRootNode() : null;
-        el = (root && root.host) ? root.host : el.parentNode;
-        if (el === document || el === window || !el) break;
-      }
-      // Standalone Lovelace card - no ha-tools-panel, always refresh
-      return true;
-    } catch (e) { return true; }
+    return this.config?.auto_refresh !== false;
+  }
+
+  _isLifecycleActive(epoch, hass) {
+    return this.isConnected && this._lifecycleEpoch === epoch && this._hass === hass;
+  }
+
+  _isLoadActive(token) {
+    return Boolean(token) && this._activeLoadToken === token
+      && this._isLifecycleActive(token.epoch, token.hass);
   }
 
   async _loadAndRender() {
-    if (this._loadingInProgress) return;
+    if (this._loadingInProgress || !this.isConnected || !this._hass) return;
+    const token = { epoch: this._lifecycleEpoch, hass: this._hass };
+    this._activeLoadToken = token;
+    this._pendingLoad = false;
     this._loadingInProgress = true;
     this._isLoading = true;
     this.render(); // Show loading spinner immediately (fixes blank page)
     try {
-      await this.updateAutomationData();
+      await this.updateAutomationData(token);
+      if (!this._isLoadActive(token)) return;
       this.render();
       this._lastRenderTime = Date.now();
     } finally {
-      this._loadingInProgress = false;
+      if (token.epoch === this._lifecycleEpoch) {
+        if (this._activeLoadToken === token) this._activeLoadToken = null;
+        this._loadingInProgress = false;
+        if (this._pendingLoad && this.isConnected) {
+          this._pendingLoad = false;
+          queueMicrotask(() => this._loadAndRender());
+        }
+      }
     }
   }
 
@@ -903,6 +1777,8 @@ class HAAutomationAnalyzer extends HTMLElement {
       return window.Chart;
     }
     this.shadowRoot.querySelectorAll('canvas').forEach(canvas => {
+      canvas.closest('.canvas-wrap')?.classList.add('chart-unavailable-wrap');
+      canvas.closest('.card')?.classList.add('chart-unavailable-card');
       const fallback = document.createElement('div');
       fallback.className = 'chart-unavailable';
       fallback.setAttribute('role', 'status');
@@ -912,41 +1788,35 @@ class HAAutomationAnalyzer extends HTMLElement {
     return null;
   }
 
-  _getCachedData(key) {
-    const timestamp = this._cacheTimestamps.get(key);
-    if (timestamp && Date.now() - timestamp < this._cacheTTL) return this._apiCache.get(key);
-    return null;
-  }
-
-  _setCachedData(key, data) {
-    this._apiCache.set(key, data);
-    this._cacheTimestamps.set(key, Date.now());
-  }
-
-  async _callAPI(method, path) {
+  async _callAPI(method, path, loadToken = null) {
     try {
-      const cached = this._getCachedData(path);
-      if (cached) return cached;
-      const response = await this._hass.callApi(method, path);
-      this._setCachedData(path, response);
+      const hass = loadToken?.hass || this._hass;
+      const response = await hass.callApi(method, path);
+      if (loadToken && !this._isLoadActive(loadToken)) return null;
       return response;
-    } catch (error) {
-      console.warn(`API call failed for ${path}:`, error);
+    } catch (_error) {
+      if (loadToken && !this._isLoadActive(loadToken)) return null;
+      console.warn('[ha-automation-analyzer] api_unavailable');
       return null;
     }
   }
 
-  async _getAllAutomationConfigs(automations) {
-    // Method 1: WebSocket bulk (works in main frontend/dashboard)
+  async _getAllAutomationConfigs(automations, loadToken = null) {
+    const hass = loadToken?.hass || this._hass;
+    // Prefer the bulk WebSocket endpoint to minimize requests.
     try {
-      if (this._hass && this._hass.callWS) {
-        const configs = await this._hass.callWS({ type: "config/automation/list" });
+      if (hass && hass.callWS) {
+        const configs = await hass.callWS({ type: "config/automation/list" });
+        if (loadToken && !this._isLoadActive(loadToken)) return [];
         if (configs && Array.isArray(configs) && configs.length > 0) return configs;
       }
-    } catch (e) { /* WS not available in this context */ }
+    } catch (_error) {
+      if (loadToken && !this._isLoadActive(loadToken)) return [];
+      /* WS not available in this context */
+    }
 
-    // Method 2: Per-automation REST API (works in HA Tools panel)
-    // Only fetch enabled automations to keep it fast
+    // Fall back to bounded per-automation reads when bulk listing is unavailable.
+    // Only fetch enabled automations to limit backend load and retained data.
     if (automations && automations.length > 0) {
       const configs = [];
       const enabled = automations.filter(([, e]) => e.state === "on");
@@ -958,9 +1828,14 @@ class HAAutomationAnalyzer extends HTMLElement {
           batch.map(([, entity]) => {
             const attrId = entity.attributes?.id;
             if (!attrId) return Promise.reject("no id");
-            return this._callAPI("GET", `config/automation/config/${attrId}`);
+            return this._callAPI(
+              "GET",
+              `config/automation/config/${encodeURIComponent(attrId)}`,
+              loadToken
+            );
           })
         );
+        if (loadToken && !this._isLoadActive(loadToken)) return [];
         for (const r of results) {
           if (r.status === "fulfilled" && r.value && r.value.id) configs.push(r.value);
         }
@@ -968,56 +1843,8 @@ class HAAutomationAnalyzer extends HTMLElement {
       if (configs.length > 0) return configs;
     }
 
-    console.warn("Could not fetch automation configs");
+    console.warn('[ha-automation-analyzer] automation_config_unavailable');
     return [];
-  }
-
-  async _getAutomationTraces(automationId) {
-    // Traces contain actual execution data - timing, errors, etc.
-    // Use bulk traces if already fetched
-    if (this._bulkTraces) {
-      return this._bulkTraces.filter(t => t.item_id === automationId);
-    }
-    try {
-      if (this._hass && this._hass.callWS) {
-        const traces = await this._hass.callWS({
-          type: "automation/trace/list",
-          automation_id: automationId
-        });
-        if (traces && Array.isArray(traces)) return traces;
-      }
-    } catch (e) {
-      // Trace API may not be available in all HA versions
-    }
-    return [];
-  }
-
-  async _getAllTracesBulk() {
-    // Fetch ALL automation traces in one call using trace/list
-    try {
-      if (this._hass && this._hass.callWS) {
-        const traces = await this._hass.callWS({ type: "trace/list", domain: "automation" });
-        if (traces && Array.isArray(traces)) return traces;
-      }
-    } catch (e) { /* Not available */ }
-    return null;
-  }
-
-  async _getAutomationHistory(entityId, days = 14) {
-    try {
-      const now = new Date();
-      const startDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-      const startStr = startDate.toISOString();
-      const history = await this._callAPI(
-        "GET",
-        `history/period/${startStr}?filter_entity_id=${entityId}&minimal_response&no_attributes`
-      );
-      if (Array.isArray(history) && history.length > 0) return history[0] || [];
-      return [];
-    } catch (error) {
-      console.warn(`Could not get history for ${entityId}:`, error);
-      return [];
-    }
   }
 
   _parseAutomationConfig(configObj) {
@@ -1061,75 +1888,25 @@ class HAAutomationAnalyzer extends HTMLElement {
     return Math.max(0, Math.round(score));
   }
 
-  _extractTodayCount(history) {
-    if (!history || history.length === 0) return 0;
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return history.filter(event => {
-      const eventTime = new Date(event.last_changed);
-      return eventTime >= startOfDay && event.state === "on";
-    }).length;
-  }
-
-  _countTracesToday(traces) {
-    if (!traces || traces.length === 0) return 0;
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return traces.filter(t => {
-      const raw = (t.timestamp && typeof t.timestamp === "object") ? t.timestamp.start : t.timestamp;
-      if (!raw) return false;
-      const ts = new Date(raw);
-      return ts >= startOfDay;
-    }).length;
-  }
-
-  _analyzeTraces(traces) {
-    // Extract execution times and error status from traces
-    const result = { avgTime: "N/A", hasErrors: false, errorCount: 0, executionCount: traces.length, recentTimes: [] };
-    if (!traces || traces.length === 0) return result;
-    const durations = [];
-    for (const trace of traces) {
-      if (trace.state === "stopped" && trace.script_execution === "error") {
-        result.hasErrors = true;
-        result.errorCount++;
-      }
-      // Support both formats: trace/list (timestamp.start/finish) and automation/trace/list (timestamp + finished_at)
-      let start = null, end = null;
-      if (trace.timestamp && typeof trace.timestamp === "object" && trace.timestamp.start) {
-        start = new Date(trace.timestamp.start).getTime();
-        end = trace.timestamp.finish ? new Date(trace.timestamp.finish).getTime() : null;
-      } else if (trace.timestamp) {
-        start = new Date(trace.timestamp).getTime();
-        end = trace.finished_at ? new Date(trace.finished_at).getTime() : null;
-      }
-      if (start && end) {
-        const duration = end - start;
-        if (duration >= 0 && duration < 300000) {
-          durations.push(duration);
-        }
-      }
+  async updateAutomationData(loadToken = null) {
+    const hass = loadToken?.hass || this._hass;
+    const inactive = () => loadToken && !this._isLoadActive(loadToken);
+    if (inactive()) return;
+    if (!hass || !hass.states) {
+      if (!inactive()) this._isLoading = false;
+      return;
     }
-    if (durations.length > 0) {
-      result.avgTime = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
-      result.recentTimes = durations.slice(-10);
-    }
-    return result;
-  }
-
-  async updateAutomationData() {
-    if (!this._hass || !this._hass.states) { this._isLoading = false; return; }
     this._isLoading = true;
     this._loadingPhase = "Odczytywanie stan\u00f3w automatyzacji...";
     try {
       this._fetchError = null;
-      const automations = Object.entries(this._hass.states).filter(([id]) => id.startsWith("automation."));
+      const automations = Object.entries(hass.states).filter(([id]) => id.startsWith("automation."));
+      this._invalidateTraceStatistics();
       this.automationStats.clear();
       this.triggerTypes.clear();
       this.failedAutomations.clear();
       this.disabledAutomations = [];
       this.executionTimes = [];
-      this.automationHistory.clear();
-      this.automationTraces.clear();
 
       // --- Phase 1: Instant pass using hass states only (ZERO API calls) ---
       const automationMeta = [];
@@ -1154,7 +1931,7 @@ class HAAutomationAnalyzer extends HTMLElement {
           todayCount: 0, avgExecutionTime: "N/A",
           totalActions: 0, conditions: 0,
           triggerTypes: [], primaryTrigger: "unknown",
-          isFailed: false, traceCount: 0, history: []
+          isFailed: false, traceCount: 0
         });
 
         automationMeta.push({ id, entity, name, internalId, isDisabled, lastTriggered });
@@ -1163,12 +1940,14 @@ class HAAutomationAnalyzer extends HTMLElement {
       // Show basic stats immediately (no API calls made yet)
       this._isLoading = false;
       this._lastUpdated = new Date();
+      this._suppressTimelineAutoFetch = false;
       this.render();
 
       // --- Phase 2: Fetch automation configs (enriches trigger types) ---
       this._loadingPhase = this._lang === 'pl' ? "Pobieranie konfiguracji automatyzacji..." : "Fetching automation configuration...";
       this.render();
-      const allConfigs = await this._getAllAutomationConfigs(automations);
+      const allConfigs = await this._getAllAutomationConfigs(automations, loadToken);
+      if (inactive()) return;
       const configByEntityId = new Map();
       for (const [entityId, entity] of automations) {
         const attrId = entity.attributes?.id;
@@ -1209,115 +1988,15 @@ class HAAutomationAnalyzer extends HTMLElement {
       // Re-render with enriched config data
       this.render();
 
-      // --- Phase 2b: Fetch traces ---
-      this._loadingPhase = this._t.phaseLoadingTraces;
-      this.render();
-      const enabled = automationMeta.filter(a => !a.isDisabled);
-      const batchSize = 15;
-      // Try bulk trace fetch first (trace/list with domain=automation) - single WS call
-      this._bulkTraces = await this._getAllTracesBulk();
-      if (this._bulkTraces) {
-        // Bulk succeeded - distribute traces to each automation
-        for (const a of enabled) {
-          const traces = this._bulkTraces.filter(t => t.item_id === a.internalId);
-          this.automationTraces.set(a.id, traces);
-          const traceAnalysis = this._analyzeTraces(traces);
-          const todayTraceCount = this._countTracesToday(traces);
-          const existing = this.automationStats.get(a.id);
-          if (existing) {
-            existing.todayCount = todayTraceCount;
-            existing.traceCount = traces.length;
-            if (traceAnalysis.avgTime !== "N/A") {
-              existing.avgExecutionTime = traceAnalysis.avgTime;
-              this.executionTimes.push(traceAnalysis.avgTime);
-            }
-            if (traceAnalysis.hasErrors) {
-              existing.isFailed = true;
-              this.failedAutomations.set(a.id, {
-                name: a.name, automationId: a.internalId,
-                reason: `${traceAnalysis.errorCount} ${this._t.errorCountRecent}`
-              });
-            }
-          }
-        }
-      } else {
-      // Fallback: per-automation trace fetch in batches
-      for (let i = 0; i < enabled.length; i += batchSize) {
-        const batch = enabled.slice(i, i + batchSize);
-        const traceResults = await Promise.allSettled(
-          batch.map(a => this._getAutomationTraces(a.internalId).then(traces => ({ ...a, traces })))
-        );
-        for (const r of traceResults) {
-          if (r.status !== "fulfilled") continue;
-          const { id, internalId, name, traces } = r.value;
-          this.automationTraces.set(id, traces);
-          const traceAnalysis = this._analyzeTraces(traces);
-          const todayTraceCount = this._countTracesToday(traces);
-          const existing = this.automationStats.get(id);
-          if (existing) {
-            existing.todayCount = todayTraceCount;
-            existing.traceCount = traces.length;
-            if (traceAnalysis.avgTime !== "N/A") {
-              existing.avgExecutionTime = traceAnalysis.avgTime;
-              this.executionTimes.push(traceAnalysis.avgTime);
-            }
-            if (traceAnalysis.hasErrors) {
-              existing.isFailed = true;
-              this.failedAutomations.set(id, {
-                name, automationId: internalId,
-                reason: `${traceAnalysis.errorCount} ${this._t.errorCountRecent}`
-              });
-            }
-          }
-        }
-      }
-      } // end else (fallback per-automation trace fetch)
-
-      // --- Phase 3: Fetch history ---
-      this._loadingPhase = this._t.phaseLoadingHistory;
-      this.render();
-      const recentActive = enabled
-        .filter(a => a.lastTriggered)
-        .sort((a, b) => b.lastTriggered.getTime() - a.lastTriggered.getTime())
-        .slice(0, 30);
-      for (let i = 0; i < recentActive.length; i += batchSize) {
-        const batch = recentActive.slice(i, i + batchSize);
-        const histResults = await Promise.allSettled(
-          batch.map(a => this._getAutomationHistory(a.id).then(history => ({ ...a, history })))
-        );
-        for (const r of histResults) {
-          if (r.status !== "fulfilled") continue;
-          const { id, history } = r.value;
-          this.automationHistory.set(id, history);
-          const existing = this.automationStats.get(id);
-          if (existing) {
-            existing.history = history;
-            if (existing.todayCount === 0) {
-              existing.todayCount = this._extractTodayCount(history);
-            }
-            if (existing.avgExecutionTime === "N/A" && history.length > 0) {
-              const durations = [];
-              for (let j = 1; j < history.length; j++) {
-                const prev = new Date(history[j - 1].last_changed);
-                const curr = new Date(history[j].last_changed);
-                const duration = curr - prev;
-                if (duration < 5000 && duration > 0) durations.push(duration);
-              }
-              if (durations.length > 0) {
-                existing.avgExecutionTime = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
-                this.executionTimes.push(existing.avgExecutionTime);
-              }
-            }
-          }
-        }
-      }
       this._loadingPhase = "";
       this._lastUpdated = new Date();
-    } catch (err) {
-      this._fetchError = (err && err.message) ? 'Could not load automation data: ' + err.message : 'Could not load automation data';
-      console.error("Error in updateAutomationData:", err);
+    } catch (_error) {
+      if (inactive()) return;
+      this._fetchError = this._lang === 'pl'
+        ? 'Nie można wczytać danych automatyzacji.' : 'Could not load automation data.';
+      console.error('[ha-automation-analyzer] automation_data_unavailable');
     } finally {
-      this._isLoading = false;
+      if (!inactive()) this._isLoading = false;
     }
   }
 
@@ -1431,20 +2110,21 @@ class HAAutomationAnalyzer extends HTMLElement {
   }
 
   _navigateToAutomation(automationId) {
-    const path = `/config/automation/edit/${automationId}`;
+    if (typeof automationId !== 'string' || !automationId) return;
+    const path = `/config/automation/edit/${encodeURIComponent(automationId)}`;
     // Method 1: HA frontend navigate (works in dashboard cards)
     if (this._hass && typeof this._hass.navigate === "function") {
       this._hass.navigate(path);
       return;
     }
-    // Method 2: Fire location-changed event (works in HA Tools panel)
+    // Method 2: fire Home Assistant's location-changed event.
     try {
       const event = new CustomEvent("location-changed", { detail: { replace: false } });
       window.history.pushState(null, "", path);
       window.dispatchEvent(event);
       return;
-    } catch (e) {
-      console.warn("pushState navigation failed:", e);
+    } catch (_error) {
+      console.warn('[ha-automation-analyzer] navigation_unavailable');
     }
     // Method 3: Direct URL change (last resort)
     window.location.href = path;
@@ -1452,19 +2132,24 @@ class HAAutomationAnalyzer extends HTMLElement {
 
   async _toggleAutomation(entityId, enable) {
     if (!this._hass) return;
+    const epoch = this._lifecycleEpoch;
+    const hass = this._hass;
     try {
-      await this._hass.callService("automation", enable ? "turn_on" : "turn_off", {
+      await hass.callService("automation", enable ? "turn_on" : "turn_off", {
         entity_id: entityId
       });
+      if (!this._isLifecycleActive(epoch, hass)) return;
       this._toast((enable ? "Enabled " : "Disabled ") + entityId.replace(/^automation\./, ""));
       // Refresh data after toggle
       this._refreshTimer = setTimeout(() => {
         this._refreshTimer = null;
         if (this.isConnected) this._loadAndRender();
       }, 1000);
-    } catch (e) {
-      console.error("Failed to toggle automation:", e);
-      this._toast("Could not change automation: " + ((e && e.message) || "unknown error"), true);
+    } catch (_error) {
+      if (!this._isLifecycleActive(epoch, hass)) return;
+      console.error('[ha-automation-analyzer] automation_toggle_failed');
+      this._toast(this._lang === 'pl'
+        ? 'Nie można zmienić stanu automatyzacji.' : 'Could not change automation state.', true);
     }
   }
 
@@ -1478,102 +2163,356 @@ class HAAutomationAnalyzer extends HTMLElement {
     } catch (e) {}
   }
 
-  async _fetchTimeline(entityId) {
-    // entityId is automation.xxx; we need the internal automation id for trace/get
+  _isTimelineActive(token) {
+    return Boolean(token) && this._activeTimelineToken === token
+      && this._isLifecycleActive(token.epoch, token.hass);
+  }
+
+  _resetTimelineRunState() {
+    this._timelineRuns = [];
+    this._timelineSelectedRunId = null;
+    this._timelineBaselineRunId = null;
+    this._timelineBaselineData = null;
+    this._timelineComparison = null;
+    this._timelineCompareLoading = false;
+    this._timelinePageCursor = null;
+  }
+
+  _abortTimelinePipeline() {
+    const token = this._activeTimelineToken;
+    if (token?.controller && !token.controller.signal.aborted) token.controller.abort();
+    this._activeTimelineToken = null;
+  }
+
+  _timelineMessage(status) {
+    if (status === 'permission_denied' || status === 'unknown_role') {
+      return this._lang === 'pl'
+        ? 'Dostęp do tras wymaga konta administratora Home Assistanta.'
+        : 'Automation traces require a Home Assistant administrator account.';
+    }
+    if (status === 'malformed') {
+      return this._lang === 'pl'
+        ? 'Home Assistant zwrócił nieobsługiwany format trasy. Dane zostały bezpiecznie odrzucone.'
+        : 'Home Assistant returned an unsupported trace format. The data was safely rejected.';
+    }
+    if (status === 'no_data') return this._t.timelineNoTrace;
+    return this._t.timelineLoadError;
+  }
+
+  _newTimelineToken() {
+    this._abortTimelinePipeline();
+    const token = {
+      epoch: this._lifecycleEpoch,
+      hass: this._hass,
+      controller: new AbortController()
+    };
+    if (!this._isLifecycleActive(token.epoch, token.hass)) return null;
+    this._activeTimelineToken = token;
+    return token;
+  }
+
+  async _fetchTimeline(entityId, requestedRunId = null) {
+    const token = this._newTimelineToken();
+    if (!token) return;
     const stats = this.automationStats.get(entityId);
     const automationId = (stats && stats.automationId) ? stats.automationId : entityId.replace('automation.', '');
     this._timelineLoading = true;
     this._timelineData = null;
     this._timelineError = null;
+    this._resetTimelineRunState();
     this.render();
 
     try {
-      if (!this._hass || !this._hass.callWS) throw new Error('WS not available');
-
-      // Step 1: get list of traces for this automation (newest first)
-      let traceList = null;
-      try {
-        traceList = await this._hass.callWS({ type: 'trace/list', domain: 'automation', item_id: automationId });
-      } catch (e1) {
-        // Some HA versions use automation/trace/list
-        try {
-          traceList = await this._hass.callWS({ type: 'automation/trace/list', automation_id: automationId });
-        } catch (e2) { /* fall through */ }
-      }
-
-      if (!traceList || !Array.isArray(traceList) || traceList.length === 0) {
-        // No traces — show fallback with last_triggered info
-        this._timelineData = { empty: true, entityId, stats };
-        this._timelineLoading = false;
-        this.render();
+      const listed = await _aaRequestTraceList({
+        hass: token.hass,
+        itemId: automationId,
+        signal: token.controller.signal
+      });
+      if (!this._isTimelineActive(token)) return;
+      if (listed.status !== 'available') {
+        if (listed.status === 'no_data') this._timelineData = { empty: true, capability: listed, entityId, stats };
+        else if (listed.status !== 'aborted') this._timelineError = listed.status;
         return;
       }
-
-      // Pick the latest trace (they come sorted newest first, but sort by timestamp.start to be safe)
-      const sorted = traceList.slice().sort((a, b) => {
-        const ta = (a.timestamp && a.timestamp.start) ? new Date(a.timestamp.start).getTime() : (a.timestamp ? new Date(a.timestamp).getTime() : 0);
-        const tb = (b.timestamp && b.timestamp.start) ? new Date(b.timestamp.start).getTime() : (b.timestamp ? new Date(b.timestamp).getTime() : 0);
-        return tb - ta;
-      });
-      const latest = sorted[0];
-      const traceId = latest.run_id || latest.trace_id;
-
-      // Step 2: fetch the full trace with path data
-      let fullTrace = null;
-      try {
-        fullTrace = await this._hass.callWS({ type: 'trace/get', domain: 'automation', item_id: automationId, run_id: traceId });
-      } catch (e3) {
-        try {
-          fullTrace = await this._hass.callWS({ type: 'automation/trace/get', automation_id: automationId, run_id: traceId });
-        } catch (e4) { /* fall through */ }
+      this._timelineRuns = listed.data.runs.filter(run => run.kind === 'execution');
+      const selected = this._timelineRuns.find(run => run.run_id === requestedRunId)
+        || this._timelineRuns[0];
+      if (!selected) {
+        this._timelineData = { empty: true, capability: listed, entityId, stats };
+        return;
       }
-
-      this._timelineData = { trace: fullTrace || latest, meta: latest, entityId, stats };
-    } catch (err) {
-      this._timelineError = (err && err.message) ? err.message : String(err);
-      console.warn('[ha-automation-analyzer] timeline fetch error:', err);
+      this._timelineSelectedRunId = selected.run_id;
+      const capability = await _aaRequestFullTrace({
+        hass: token.hass,
+        itemId: automationId,
+        runId: selected.run_id,
+        signal: token.controller.signal
+      });
+      if (!this._isTimelineActive(token)) return;
+      if (capability.status === 'available') {
+        this._timelineData = { capability, trace: capability.data, summary: selected, entityId, stats };
+      } else if (capability.status === 'no_data') {
+        this._timelineData = { empty: true, capability, entityId, stats };
+      } else if (capability.status !== 'aborted') this._timelineError = capability.status;
     } finally {
-      this._timelineLoading = false;
+      if (this._isTimelineActive(token)) {
+        this._activeTimelineToken = null;
+        this._timelineLoading = false;
+        this.render();
+      }
+    }
+  }
+
+  async _fetchTimelineRun(entityId, runId) {
+    const token = this._newTimelineToken();
+    if (!token) return;
+    const stats = this.automationStats.get(entityId);
+    const automationId = stats?.automationId || entityId.replace('automation.', '');
+    const summary = this._timelineRuns.find(run => run.run_id === runId);
+    if (!summary) {
+      this._activeTimelineToken = null;
+      this._timelineError = 'no_data';
       this.render();
+      return;
+    }
+    this._timelineLoading = true;
+    this._timelineError = null;
+    this._timelineData = null;
+    this._timelineSelectedRunId = runId;
+    this._timelineBaselineRunId = null;
+    this._timelineBaselineData = null;
+    this._timelineComparison = null;
+    this.render();
+    try {
+      const capability = await _aaRequestFullTrace({
+        hass: token.hass,
+        itemId: automationId,
+        runId,
+        signal: token.controller.signal
+      });
+      if (!this._isTimelineActive(token)) return;
+      if (capability.status === 'available') {
+        this._timelineData = { capability, trace: capability.data, summary, entityId, stats };
+      } else if (capability.status === 'no_data') {
+        this._timelineData = { empty: true, capability, entityId, stats };
+      } else if (capability.status !== 'aborted') this._timelineError = capability.status;
+    } finally {
+      if (this._isTimelineActive(token)) {
+        this._activeTimelineToken = null;
+        this._timelineLoading = false;
+        this.render();
+      }
+    }
+  }
+
+  async _compareTimelineRuns() {
+    const entityId = this._selectedTimelineId;
+    const baselineRunId = this._timelineBaselineRunId;
+    const currentCapability = this._timelineData?.capability;
+    if (!entityId || !baselineRunId || currentCapability?.status !== 'available'
+      || baselineRunId === this._timelineSelectedRunId) return;
+    const token = this._newTimelineToken();
+    if (!token) return;
+    const stats = this.automationStats.get(entityId);
+    const automationId = stats?.automationId || entityId.replace('automation.', '');
+    this._timelineCompareLoading = true;
+    this._timelineComparison = null;
+    this.render();
+    try {
+      const baseline = await _aaRequestFullTrace({
+        hass: token.hass,
+        itemId: automationId,
+        runId: baselineRunId,
+        signal: token.controller.signal
+      });
+      if (!this._isTimelineActive(token)) return;
+      this._timelineBaselineData = baseline.status === 'available' ? baseline : null;
+      this._timelineComparison = baseline.status === 'available'
+        ? _aaCompareTraceRuns(baseline.data, currentCapability.data)
+        : baseline;
+    } finally {
+      if (this._isTimelineActive(token)) {
+        this._activeTimelineToken = null;
+        this._timelineCompareLoading = false;
+        this.render();
+      }
+    }
+  }
+
+  _exportTimelineDiagnostic() {
+    const capability = this._timelineData?.capability;
+    if (capability?.status !== 'available') return;
+    const diagnostic = _aaBuildDiagnostic({
+      capability,
+      comparison: this._timelineComparison?.status === 'available' ? this._timelineComparison : null
+    });
+    _aaDownloadDiagnostic(diagnostic);
+  }
+
+  _isTraceStatsActive(token) {
+    return Boolean(token) && this._activeTraceStatsToken === token
+      && this._isLifecycleActive(token.epoch, token.hass);
+  }
+
+  _invalidateTraceStatistics() {
+    const token = this._activeTraceStatsToken;
+    if (token?.controller && !token.controller.signal.aborted) token.controller.abort();
+    this._restoreTraceStatisticsBase();
+    this._activeTraceStatsToken = null;
+    this._traceStatsCapability = null;
+    this._traceStatsCache = null;
+    this._traceStatsLoading = false;
+  }
+
+  _restoreTraceStatisticsBase() {
+    const base = this._traceStatsBaseMetrics;
+    if (!base) return;
+    for (const stats of this.automationStats.values()) {
+      const stored = base.byEntityId.get(stats.id);
+      if (!stored) continue;
+      stats.avgExecutionTime = stored.avgExecutionTime;
+      stats.traceCount = stored.traceCount;
+      stats.todayCount = stored.todayCount;
+      stats.isFailed = stored.isFailed;
+    }
+    this.executionTimes = base.executionTimes.slice();
+    this.failedAutomations = new Map(base.failedAutomations);
+    this._traceStatsBaseMetrics = null;
+  }
+
+  _traceStatsSignature() {
+    return Array.from(this.automationStats.values())
+      .map(item => item.automationId)
+      .filter(value => typeof value === 'string' && value)
+      .sort()
+      .join('\u0000');
+  }
+
+  _applyTraceStatistics(capability) {
+    if (capability?.status !== 'available' || !Array.isArray(capability.data?.runs)) return;
+    if (!this._traceStatsBaseMetrics) {
+      this._traceStatsBaseMetrics = {
+        byEntityId: new Map(Array.from(this.automationStats.values()).map(stats => [
+          stats.id,
+          {
+            avgExecutionTime: stats.avgExecutionTime,
+            traceCount: stats.traceCount,
+            todayCount: stats.todayCount,
+            isFailed: stats.isFailed
+          }
+        ])),
+        executionTimes: this.executionTimes.slice(),
+        failedAutomations: new Map(this.failedAutomations)
+      };
+    }
+    const groups = new Map();
+    for (const run of capability.data.runs) {
+      if (run.kind !== 'execution') continue;
+      if (!groups.has(run.item_id)) groups.set(run.item_id, []);
+      groups.get(run.item_id).push(run);
+    }
+    const durations = [];
+    const now = new Date(Date.now());
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const endOfDay = startOfDay + 24 * 60 * 60 * 1000;
+    this.failedAutomations.clear();
+    for (const stats of this.automationStats.values()) {
+      const runs = groups.get(stats.automationId) || [];
+      const completed = runs.map(run => run.run_duration_ms)
+        .filter(value => Number.isFinite(value) && value >= 0 && value < 300000);
+      stats.traceCount = runs.length;
+      stats.todayCount = runs.filter(run => {
+        const startedAt = _aaParseTimestamp(run.started_at);
+        return startedAt !== null && startedAt >= startOfDay && startedAt < endOfDay;
+      }).length;
+      const errors = runs.filter(run => run.script_execution === 'error').length;
+      stats.isFailed = errors > 0;
+      if (stats.isFailed) {
+        this.failedAutomations.set(stats.id, {
+          automationId: stats.automationId,
+          name: stats.name,
+          reason: this._lang === 'pl'
+            ? `${errors} ${errors === 1 ? 'błąd' : 'błędów'} w zachowanych trasach`
+            : `${errors} ${errors === 1 ? 'error' : 'errors'} in retained traces`
+        });
+      }
+      if (completed.length) {
+        stats.avgExecutionTime = Math.round(completed.reduce((sum, value) => sum + value, 0) / completed.length);
+        durations.push(...completed);
+      } else stats.avgExecutionTime = "N/A";
+    }
+    this.executionTimes = durations;
+  }
+
+  async _loadTraceStatistics(options = {}) {
+    if (!this.isConnected || !this._hass || this._traceStatsLoading) return;
+    const signature = this._traceStatsSignature();
+    const now = Date.now();
+    const cached = this._traceStatsCache;
+    if (options.force !== true && cached && cached.hass === this._hass && cached.connection === this._hass.connection
+      && cached.epoch === this._lifecycleEpoch && cached.signature === signature
+      && now < cached.expiresAt) {
+      this._traceStatsCapability = cached.capability;
+      this._applyTraceStatistics(cached.capability);
+      this.render();
+      return;
+    }
+    if (options.force === true) {
+      this._restoreTraceStatisticsBase();
+      this._traceStatsCache = null;
+    }
+    const token = {
+      epoch: this._lifecycleEpoch,
+      hass: this._hass,
+      connection: this._hass.connection,
+      signature,
+      controller: new AbortController()
+    };
+    this._activeTraceStatsToken = token;
+    this._traceStatsLoading = true;
+    this._traceStatsCapability = null;
+    this.render();
+    try {
+      const capability = await _aaRequestTraceList({
+        hass: token.hass,
+        global: true,
+        signal: token.controller.signal
+      });
+      if (!this._isTraceStatsActive(token)) return;
+      this._traceStatsCapability = capability;
+      if (capability.status === 'available' || capability.status === 'no_data') {
+        this._traceStatsCache = {
+          hass: token.hass,
+          connection: token.connection,
+          epoch: token.epoch,
+          signature: token.signature,
+          expiresAt: Date.now() + 60000,
+          capability
+        };
+      }
+      this._applyTraceStatistics(capability);
+    } finally {
+      if (this._isTraceStatsActive(token)) {
+        this._activeTraceStatsToken = null;
+        this._traceStatsLoading = false;
+        this.render();
+      }
     }
   }
 
   _renderTimelineSteps(traceObj) {
-    // trace/get returns {trace: {path: [...], ...}} or just the object
-    const traceData = (traceObj && traceObj.trace) ? traceObj.trace : traceObj;
-    const path = traceData && (traceData.path || traceData.trace_path);
-    if (!path || !Array.isArray(path) || path.length === 0) return null;
+    const nodes = traceObj?.nodes;
+    if (!Array.isArray(nodes) || nodes.length === 0) return null;
 
-    // Get the start time for relative offsets
-    const rawStart = (traceData.timestamp && traceData.timestamp.start) ? traceData.timestamp.start : (traceData.timestamp || null);
-    const startMs = rawStart ? new Date(rawStart).getTime() : null;
-
-    const steps = path.map((step, idx) => {
-      // Each step has: path (e.g. "trigger/0", "condition/0", "action/0"), ...
-      // changed_variables is set for changed steps, error for errors
-      const stepPath = step.path || '';
-      const changed = step.changed_variables;
-      const error = step.error;
-      let statusClass, statusLabel;
-
-      if (error) {
-        statusClass = 'tl-fail'; statusLabel = this._t.timelineFail;
-      } else if (changed && Object.keys(changed).length > 0) {
-        statusClass = 'tl-changed'; statusLabel = this._t.timelineChanged;
-      } else if (step.result !== undefined && step.result === false) {
-        statusClass = 'tl-skip'; statusLabel = this._t.timelineSkipped;
-      } else {
-        statusClass = 'tl-pass'; statusLabel = this._t.timelinePass;
-      }
-
-      // Relative timestamp
-      let relStr = '';
-      const stepTs = step.timestamp;
-      if (stepTs && startMs) {
-        const stepMs = new Date(stepTs).getTime();
-        const diff = stepMs - startMs;
-        relStr = `+${diff >= 0 ? diff : 0}ms`;
-      }
+    const steps = nodes.map((step, idx) => {
+      const stepPath = step.path;
+      const statusClass = step.status === 'error' ? 'tl-fail'
+        : step.status === 'changed' ? 'tl-changed'
+        : step.status === 'skipped' ? 'tl-skip' : 'tl-pass';
+      const statusLabel = step.status === 'error' ? this._t.timelineFail
+        : step.status === 'changed' ? this._t.timelineChanged
+        : step.status === 'skipped' ? this._t.timelineSkipped : this._t.timelinePass;
+      const relStr = `+${step.offset_ms}ms`;
 
       // Pretty path label: trigger/0 → Trigger 1, condition/0 → Condition 1, action/0/... → Action 1 > ...
       const parts = stepPath.split('/');
@@ -1586,9 +2525,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         if (parts.length > 2) label += ' › ' + parts.slice(2).join('/');
       }
 
-      const errorMsg = error ? `<div class="tl-error-msg">${_esc(String(error))}</div>` : '';
-
-      return `<div class="tl-step ${idx === path.length - 1 ? 'tl-last' : ''}">
+      return `<div class="tl-step ${idx === nodes.length - 1 ? 'tl-last' : ''}">
         <div class="tl-connector"><div class="tl-dot ${statusClass}"></div></div>
         <div class="tl-body">
           <div class="tl-row">
@@ -1596,7 +2533,6 @@ class HAAutomationAnalyzer extends HTMLElement {
             <span class="tl-badge ${statusClass}">${statusLabel}</span>
             ${relStr ? `<span class="tl-time">${relStr}</span>` : ''}
           </div>
-          ${errorMsg}
         </div>
       </div>`;
     });
@@ -1604,8 +2540,57 @@ class HAAutomationAnalyzer extends HTMLElement {
     return steps.join('');
   }
 
+  _renderTimelineComparison() {
+    const comparison = this._timelineComparison;
+    if (!comparison) return '';
+    if (comparison.status !== 'available') {
+      return `<div class="tl-inline-err">${_esc(this._timelineMessage(comparison.status))}</div>`;
+    }
+    const run = comparison.data.run;
+    const later = comparison.data.nodes.reached_later.length;
+    const earlier = comparison.data.nodes.reached_earlier.length;
+    const added = comparison.data.nodes.added.length;
+    const removed = comparison.data.nodes.removed.length;
+    const runLabel = run.classification === 'slower'
+      ? (this._lang === 'pl' ? 'Wolniejsze wykonanie' : 'Slower run')
+      : run.classification === 'faster'
+        ? (this._lang === 'pl' ? 'Szybsze wykonanie' : 'Faster run')
+        : (this._lang === 'pl' ? 'Czas wykonania bez istotnej zmiany' : 'No material run-time change');
+    const details = [
+      later ? `${later} ${this._lang === 'pl' ? 'kroków osiągnięto później' : 'steps reached later'}` : '',
+      earlier ? `${earlier} ${this._lang === 'pl' ? 'kroków osiągnięto wcześniej' : 'steps reached earlier'}` : '',
+      added ? `${added} ${this._lang === 'pl' ? 'dodanych kroków' : 'steps added'}` : '',
+      removed ? `${removed} ${this._lang === 'pl' ? 'usuniętych kroków' : 'steps removed'}` : ''
+    ].filter(Boolean);
+    return `<div class="tl-comparison" role="status">
+      <strong>${_esc(runLabel)}</strong>${run.delta_ms === null ? '' : ` (${run.delta_ms > 0 ? '+' : ''}${run.delta_ms}ms)`}
+      ${details.length ? `<div>${details.map(_esc).join(' · ')}</div>` : ''}
+    </div>`;
+  }
+
+  _renderTraceStatsControl() {
+    const isAdmin = this._hass?.user?.is_admin === true;
+    const roleKnown = typeof this._hass?.user?.is_admin === 'boolean';
+    const capability = this._traceStatsCapability;
+    let message = this._t.traceStatsHint;
+    if (!isAdmin) message = this._t.traceStatsAdmin;
+    else if (this._traceStatsLoading) message = this._t.traceStatsLoading;
+    else if (capability?.status === 'available') {
+      message = `${this._t.traceStatsLoaded}: ${capability.evidence.run_count}`;
+    } else if (capability?.status === 'no_data') message = this._t.traceStatsNoData;
+    else if (capability) message = this._timelineMessage(capability.status);
+    const label = capability?.status === 'available' ? this._t.traceStatsReload : this._t.traceStatsLoad;
+    return `<div class="trace-stats-control" role="region" aria-label="${_esc(this._t.traceStatsLoad)}">
+      <div class="trace-stats-copy">${_esc(message)}</div>
+      <button id="trace-stats-load" class="trace-action-btn" type="button"
+        ${!isAdmin || this._traceStatsLoading ? 'disabled' : ''}
+        aria-disabled="${!isAdmin || this._traceStatsLoading}">${_esc(this._traceStatsLoading ? this._t.traceStatsLoading : label)}</button>
+      ${!roleKnown ? `<span class="sr-only">${_esc(this._t.traceStatsAdmin)}</span>` : ''}
+    </div>`;
+  }
+
   render() {
-    if (!this._hass) return;
+    if (!this._hass || !this.isConnected) return;
     const styles = `
       
 /* ===== BENTO DESIGN SYSTEM (local fallback) ===== */
@@ -1738,6 +2723,17 @@ class HAAutomationAnalyzer extends HTMLElement {
         color: var(--bento-text);
       }
       .canvas-wrap { position: relative; height: 250px; margin-bottom: var(--aa-space-4); }
+      .canvas-wrap.chart-unavailable-wrap {
+        height: auto; min-height: 0; margin-bottom: 0; overflow: visible;
+      }
+      .card.chart-unavailable-card { min-height: 0; }
+      .card.chart-empty-card { min-height: 0; }
+      .chart-unavailable {
+        display: flex; align-items: center; min-height: 44px;
+        padding: var(--aa-space-3); box-sizing: border-box;
+        border: 1px dashed var(--bento-border); border-radius: var(--bento-radius-sm);
+        color: var(--bento-text-secondary); font-size: 13px; line-height: 1.45;
+      }
       canvas { width: 100% !important; }
       .stats {
         display: grid;
@@ -1845,7 +2841,9 @@ class HAAutomationAnalyzer extends HTMLElement {
       }
       .chart-empty {
         display: flex; align-items: center; justify-content: center;
-        height: 200px; color: var(--bento-text-secondary); font-size: 13px;
+        min-height: 44px; padding: var(--aa-space-3); box-sizing: border-box;
+        color: var(--bento-text-secondary); font-size: 13px; line-height: 1.45;
+        text-align: center;
         border: 1px dashed var(--bento-border); border-radius: var(--bento-radius-sm);
       }
       .loading-toast {
@@ -1988,6 +2986,26 @@ class HAAutomationAnalyzer extends HTMLElement {
         outline: none; transition: border-color var(--aa-anim);
       }
       .tl-select-bar select:focus { border-color: var(--bento-primary); }
+      .tl-control-group { display:flex; flex:1 1 220px; flex-direction:column; gap:4px; }
+      .tl-control-group label { font-size:11px; font-weight:600; color:var(--bento-text-secondary); }
+      .trace-action-btn {
+        padding:7px 12px; border:1px solid var(--bento-primary); border-radius:var(--bento-radius-sm);
+        background:var(--bento-primary); color:#fff; font:600 12px var(--aa-font); cursor:pointer;
+      }
+      .trace-action-btn.secondary { background:var(--bento-card); color:var(--bento-primary); }
+      .trace-action-btn:disabled { opacity:.5; cursor:not-allowed; }
+      .trace-stats-control {
+        display:flex; align-items:center; justify-content:space-between; gap:var(--aa-space-3);
+        margin-bottom:var(--aa-space-4); padding:12px 14px; border:1px solid var(--bento-border);
+        border-radius:var(--bento-radius-sm); background:var(--bento-primary-light);
+      }
+      .trace-stats-copy { flex:1; min-width:0; color:var(--bento-text-secondary); font-size:12px; line-height:1.5; }
+      .tl-comparison {
+        margin:0 0 var(--aa-space-4); padding:10px 12px; border:1px solid var(--bento-border);
+        border-radius:var(--bento-radius-sm); background:var(--bento-primary-light);
+        color:var(--bento-text); font-size:12px; line-height:1.55;
+      }
+      .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
       .tl-meta-row {
         display: flex; gap: var(--aa-space-3); flex-wrap: wrap;
         font-size: 12px; color: var(--bento-text-secondary);
@@ -2070,14 +3088,17 @@ class HAAutomationAnalyzer extends HTMLElement {
     `;
 
     const totalActive = Array.from(this.automationStats.values()).filter(a => a.state === "on").length;
+    const hasTraceStatistics = this._traceStatsCapability?.status === 'available';
+    const hasRetainedRunData = hasTraceStatistics
+      && Array.from(this.automationStats.values()).some(item => item.traceCount > 0);
     const stats = {
       total: this.automationStats.size,
       active: totalActive,
       disabled: this.disabledAutomations.length,
-      failed: this.failedAutomations.size,
+      failed: hasTraceStatistics ? this.failedAutomations.size : null,
       avgTime: this.executionTimes.length > 0
-        ? (this.executionTimes.reduce((a, b) => a + b, 0) / this.executionTimes.length).toFixed(0)
-        : "N/A"
+        ? Math.round(this.executionTimes.reduce((a, b) => a + b, 0) / this.executionTimes.length)
+        : null
     };
     const healthScore = this._calculateHealthScore();
     const healthClass = healthScore >= 75 ? "excellent" : healthScore >= 50 ? "good" : "poor";
@@ -2132,7 +3153,7 @@ class HAAutomationAnalyzer extends HTMLElement {
             const timeStr = this._formatTimeSince(a.lastTriggered);
             const execStr = typeof a.avgExecutionTime === "number" ? `${a.avgExecutionTime}ms` : "";
             const countStr = a.todayCount > 0 ? `${a.todayCount}\u00d7` : "";
-            return `<div class="auto-item-full" data-automation-id="${a.automationId}">
+            return `<div class="auto-item-full" data-automation-id="${_esc(a.automationId)}">
               <span class="auto-state-dot ${stateClass}"></span>
               <span class="auto-name" title="${_esc(a.name)}">${_esc(a.name)}</span>
               ${countStr ? `<span class="auto-detail" title="${this._t.todayCount}">${countStr}</span>` : ""}
@@ -2144,10 +3165,11 @@ class HAAutomationAnalyzer extends HTMLElement {
 
       activeTabContent = `
         <div class="health-row">
-          <div class="health-circle ${healthClass}">${healthScore}</div>
+            <div class="health-circle ${healthClass}">${healthScore}</div>
           <div>
             <div class="card-title">${this._t.systemHealth}</div>
             <div class="health-label">${healthText}</div>
+            <div class="health-label">${this._t.systemHealthScope}</div>
           </div>
         </div>
         <div class="stats">
@@ -2164,14 +3186,14 @@ class HAAutomationAnalyzer extends HTMLElement {
             <div class="stat-label">${this._t.disabledLabel}</div>
           </div>
           <div class="stat">
-            <div class="stat-value">${stats.failed}</div>
+            <div class="stat-value" id="aa-trace-errors-value">${stats.failed === null ? '\u2014' : stats.failed}</div>
             <div class="stat-label">${this._t.errorsLabel}</div>
           </div>
         </div>
         <div class="card" style="margin-top:var(--aa-space-4)">
           <h2 class="card-title">${this._t.automations}</h2>
           <div class="filter-bar">
-            <input type="text" id="aa-filter-input" placeholder="${this._t.searchPlaceholder}" value="${this._filterText.replace(/"/g, "&quot;")}">
+            <input type="text" id="aa-filter-input" placeholder="${this._t.searchPlaceholder}" value="${_esc(this._filterText)}">
             <select id="aa-sort-select">
               <option value="lastTriggered" ${this._sortBy === "lastTriggered" ? "selected" : ""}>${this._t.lastTriggered}</option>
               <option value="name" ${this._sortBy === "name" ? "selected" : ""}>${this._t.name}</option>
@@ -2191,11 +3213,11 @@ class HAAutomationAnalyzer extends HTMLElement {
           <div class="filter-results-count">${filteredAutos.length} ${this._lang === 'pl' ? 'z' : 'of'} ${allAutos.length} ${this._t.automations}</div>
           <div class="auto-list-full">${filteredListHtml}</div>
         </div>
-        <div class="card">
+        <div class="card ${hasRetainedRunData ? '' : 'chart-empty-card'}">
           <h2 class="card-title">${this._t.mostActiveTodayTitle}</h2>
-          <div class="canvas-wrap">
-            <canvas id="top-automations-chart"></canvas>
-          </div>
+          ${hasRetainedRunData
+            ? '<div class="canvas-wrap"><canvas id="top-automations-chart"></canvas></div>'
+            : `<div class="chart-empty">${this._t.noRetainedActivityData}</div>`}
         </div>
       `;
     } else if (this.currentTab === 'performance') {
@@ -2203,27 +3225,30 @@ class HAAutomationAnalyzer extends HTMLElement {
       const hasTriggerData = this.triggerTypes.size > 0;
 
       activeTabContent = `
-        <div class="card">
+        ${this._renderTraceStatsControl()}
+        <div class="card ${hasExecData ? '' : 'chart-empty-card'}">
           <h2 class="card-title">${this._t.executionTimeDistribution}</h2>
           ${hasExecData
             ? '<div class="canvas-wrap"><canvas id="exec-dist-chart"></canvas></div>'
             : `<div class="chart-empty">${this._t.noExecutionTimeData}</div>`}
         </div>
-        <div class="card">
+        <div class="card ${hasTriggerData ? '' : 'chart-empty-card'}">
           <h2 class="card-title">${this._t.triggerTypesTitle}</h2>
           ${hasTriggerData
             ? '<div class="canvas-wrap"><canvas id="trigger-type-chart"></canvas></div>'
             : `<div class="chart-empty">${this._t.noTriggerData}</div>`}
         </div>
-        <div class="card">
+        <div class="card ${hasRetainedRunData ? '' : 'chart-empty-card'}">
           <h2 class="card-title">${this._t.dailyExecutions}</h2>
-          <div class="canvas-wrap"><canvas id="sparkline-chart"></canvas></div>
+          ${hasRetainedRunData
+            ? '<div class="canvas-wrap"><canvas id="sparkline-chart"></canvas></div>'
+            : `<div class="chart-empty">${this._t.noDailyTraceData}</div>`}
         </div>
         <div class="card">
           <h2 class="card-title">${this._t.statistics}</h2>
           <div class="stats">
             <div class="stat">
-              <div class="stat-value">${stats.avgTime}${typeof stats.avgTime === "string" ? "" : "ms"}</div>
+              <div class="stat-value">${stats.avgTime === null ? '\u2014' : `${stats.avgTime}ms`}</div>
               <div class="stat-label">${this._t.avgTimeLabel}</div>
             </div>
             <div class="stat">
@@ -2248,25 +3273,25 @@ class HAAutomationAnalyzer extends HTMLElement {
 
       const slowItems = slowPaginated.length > 0
         ? slowPaginated.map(a => `
-            <div class="auto-item" data-automation-id="${a.automationId}">
+            <div class="auto-item" data-automation-id="${_esc(a.automationId)}">
               <span class="auto-name" title="${_esc(a.name)}">${_esc(a.name)}</span>
               <span class="badge badge-warn">${Math.round(a.avgExecutionTime)}ms</span>
               <span class="auto-arrow">\u203A</span>
             </div>`).join("")
-        : `<div class="empty-state">${this._t.noSlowAutomations}</div>`;
+        : `<div class="empty-state">${hasTraceStatistics ? this._t.noSlowAutomations : this._t.noTraceOptimizationData}</div>`;
 
       const failedItems = failedPaginated.length > 0
         ? failedPaginated.map(a => `
-            <div class="auto-item" data-automation-id="${a.automationId}">
+            <div class="auto-item" data-automation-id="${_esc(a.automationId)}">
               <span class="auto-name" title="${_esc(a.name)}">${_esc(a.name)}</span>
-              <span class="badge badge-error">${a.reason || this._t.errorBadge}</span>
+              <span class="badge badge-error">${_esc(a.reason || this._t.errorBadge)}</span>
               <span class="auto-arrow">\u203A</span>
             </div>`).join("")
-        : `<div class="empty-state">${this._t.noFailedLabel}</div>`;
+        : `<div class="empty-state">${hasTraceStatistics ? this._t.noFailedLabel : this._t.noTraceOptimizationData}</div>`;
 
       const disabledItems = disabledPaginated.length > 0
         ? disabledPaginated.map(a => `
-            <div class="auto-item" data-automation-id="${a.automationId}">
+            <div class="auto-item" data-automation-id="${_esc(a.automationId)}">
               <span class="auto-name" title="${_esc(a.name)}">${_esc(a.name)}</span>
               <span class="badge badge-info">${this._t.disabledBadge}</span>
               <button class="toggle-btn" data-entity-id="${_esc(a.id)}" data-action="enable">${this._t.enableButton}</button>
@@ -2276,7 +3301,7 @@ class HAAutomationAnalyzer extends HTMLElement {
 
       const staleItems = stalePaginated.length > 0
         ? stalePaginated.map(a => `
-            <div class="auto-item" data-automation-id="${a.automationId}">
+            <div class="auto-item" data-automation-id="${_esc(a.automationId)}">
               <span class="auto-name" title="${_esc(a.name)}">${_esc(a.name)}</span>
               <span class="badge badge-stale">${this._formatTimeSince(a.lastTriggered)}</span>
               <span class="auto-arrow">\u203A</span>
@@ -2284,13 +3309,14 @@ class HAAutomationAnalyzer extends HTMLElement {
         : `<div class="empty-state">${this._t.noStaleLabel}</div>`;
 
       activeTabContent = `
+        ${this._renderTraceStatsControl()}
         <div class="opt-summary">
           <div class="opt-stat warn">
-            <div class="opt-stat-value">${optData.slow.length}</div>
+            <div class="opt-stat-value">${hasTraceStatistics ? optData.slow.length : '\u2014'}</div>
             <div class="opt-stat-label">${this._t.slowStat}</div>
           </div>
           <div class="opt-stat error">
-            <div class="opt-stat-value">${optData.failed.length}</div>
+            <div class="opt-stat-value">${hasTraceStatistics ? optData.failed.length : '\u2014'}</div>
             <div class="opt-stat-label">${this._t.withErrorsStat}</div>
           </div>
           <div class="opt-stat info">
@@ -2325,7 +3351,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       `;
     } else if (this.currentTab === 'timeline') {
       // Build sorted automation list for the selector
-      const allAutos = Array.from(this.automationStats.values())
+      const allAutos = (this._suppressTimelineAutoFetch ? [] : Array.from(this.automationStats.values()))
         .sort((a, b) => {
           const at = a.lastTriggered ? a.lastTriggered.getTime() : 0;
           const bt = b.lastTriggered ? b.lastTriggered.getTime() : 0;
@@ -2345,56 +3371,98 @@ class HAAutomationAnalyzer extends HTMLElement {
         if (recent) this._selectedTimelineId = recent.id;
       }
 
-      let timelineBody = '';
+      const formatRunLabel = (run, index) => {
+        const date = new Date(run.started_at);
+        const dateLabel = Number.isFinite(date.getTime())
+          ? date.toLocaleString(this._lang === 'pl' ? 'pl-PL' : 'en-US')
+          : `${this._t.timelineRun} ${index + 1}`;
+        const duration = run.run_duration_ms === null ? (this._lang === 'pl' ? 'w toku' : 'running') : `${run.run_duration_ms}ms`;
+        return `${dateLabel} · ${duration}`;
+      };
+      const timelinePage = _aaPaginateTraceRuns(this._timelineRuns, {
+        cursor: this._timelinePageCursor,
+        limit: this._timelinePageSize
+      });
+      const timelinePageRuns = timelinePage.status === 'available' ? timelinePage.data.items : [];
+      const currentPageOffset = this._timelinePageCursor
+        ? Number(this._timelinePageCursor.slice('aatc1.'.length)) : 0;
+      const previousPageCursor = currentPageOffset > 0
+        ? (Math.max(0, currentPageOffset - this._timelinePageSize) === 0
+          ? null : `aatc1.${Math.max(0, currentPageOffset - this._timelinePageSize)}`)
+        : null;
+      const runOptions = timelinePageRuns.map((run, index) => `
+        <option value="${_esc(run.run_id)}" ${run.run_id === this._timelineSelectedRunId ? 'selected' : ''}>
+          ${_esc(formatRunLabel(run, currentPageOffset + index))}
+        </option>`).join('');
+      const baselineOptions = timelinePageRuns
+        .filter(run => run.run_id !== this._timelineSelectedRunId)
+        .map((run, index) => `
+          <option value="${_esc(run.run_id)}" ${run.run_id === this._timelineBaselineRunId ? 'selected' : ''}>
+            ${_esc(formatRunLabel(run, index))}
+          </option>`).join('');
+      const hasCurrentTrace = this._timelineData?.capability?.status === 'available';
+      const compareDisabled = !hasCurrentTrace || !this._timelineBaselineRunId
+        || this._timelineBaselineRunId === this._timelineSelectedRunId || this._timelineCompareLoading;
+      const runControls = this._timelineRuns.length ? `
+        <div class="tl-select-bar" aria-label="${_esc(this._t.timelineRun)}">
+          <div class="tl-control-group">
+            <label for="tl-run-select">${_esc(this._t.timelineRun)}</label>
+            <select id="tl-run-select">${runOptions}</select>
+          </div>
+          <div class="tl-control-group">
+            <label for="tl-baseline-select">${_esc(this._t.timelineBaseline)}</label>
+            <select id="tl-baseline-select">
+              <option value="">— ${_esc(this._t.timelineBaseline)} —</option>
+              ${baselineOptions}
+            </select>
+          </div>
+          <button id="tl-compare-btn" class="trace-action-btn secondary" type="button" ${compareDisabled ? 'disabled' : ''}>
+            ${_esc(this._timelineCompareLoading ? this._t.timelineComparing : this._t.timelineCompare)}
+          </button>
+          <button id="tl-export-btn" class="trace-action-btn" type="button" ${hasCurrentTrace ? '' : 'disabled'}>
+            ${_esc(this._t.timelineExport)}
+          </button>
+          <button id="tl-runs-prev" class="trace-action-btn secondary" type="button"
+            data-cursor="${_esc(previousPageCursor || '')}" ${currentPageOffset === 0 ? 'disabled' : ''}>
+            ${this._lang === 'pl' ? 'Nowsze' : 'Newer'}
+          </button>
+          <button id="tl-runs-next" class="trace-action-btn secondary" type="button"
+            data-cursor="${_esc(timelinePage.data?.next_cursor || '')}" ${timelinePage.data?.next_cursor ? '' : 'disabled'}>
+            ${this._lang === 'pl' ? 'Starsze' : 'Older'}
+          </button>
+        </div>` : '';
 
+      let timelineBody = '';
       if (this._timelineLoading) {
         timelineBody = `<div class="loading-state"><div class="loading-spinner" style="margin:0 auto 10px;width:22px;height:22px;border-width:3px;border-color:rgba(0,0,0,.1);border-top-color:var(--bento-primary)"></div><div>${this._t.timelineLoading}</div></div>`;
       } else if (this._timelineError) {
-        timelineBody = `<div class="tl-inline-err">⚠ ${_esc(this._timelineError)}</div><div class="tl-tip">${this._t.timelineTracingTip}</div>`;
+        timelineBody = `<div class="tl-inline-err">${_esc(this._timelineMessage(this._timelineError))}</div>`;
       } else if (!this._selectedTimelineId) {
         timelineBody = `<div class="empty-state">${this._t.timelineSelectPrompt}</div>`;
-      } else if (this._timelineData) {
-        const td = this._timelineData;
-        if (td.empty) {
-          // No traces available
-          const lt = td.stats && td.stats.lastTriggered ? `${this._t.timelineLastTriggered}: ${this._formatTimeSince(td.stats.lastTriggered)}` : '';
-          timelineBody = `
-            <div class="empty-state" style="text-align:left;padding:20px">
-              ${lt ? `<div style="margin-bottom:8px;font-size:13px;color:var(--bento-text)">${lt}</div>` : ''}
-              <div style="margin-bottom:8px">${this._t.timelineNoTrace}</div>
-            </div>
-            <div class="tl-tip">${this._t.timelineTracingTip}</div>`;
-        } else {
-          // Render the trace
-          const trace = td.trace || {};
-          const meta = td.meta || {};
-          const rawStart = (trace.timestamp && trace.timestamp.start) ? trace.timestamp.start : (meta.timestamp && meta.timestamp.start ? meta.timestamp.start : (trace.timestamp || meta.timestamp || null));
-          const rawEnd = (trace.timestamp && trace.timestamp.finish) ? trace.timestamp.finish : (meta.timestamp && meta.timestamp.finish ? meta.timestamp.finish : (trace.finished_at || meta.finished_at || null));
-          const startDate = rawStart ? new Date(rawStart) : null;
-          const totalDur = (startDate && rawEnd) ? (new Date(rawEnd).getTime() - startDate.getTime()) : null;
-
-          const runStatus = trace.state || meta.state || '';
-          const scriptExec = trace.script_execution || meta.script_execution || '';
-          const isError = scriptExec === 'error' || runStatus === 'stopped' && scriptExec === 'error';
-          const statusBadge = isError
-            ? `<span class="tl-meta-badge err">${this._t.timelineFail}</span>`
-            : `<span class="tl-meta-badge ok">${this._t.timelinePass}</span>`;
-
-          const stepsHtml = this._renderTimelineSteps(trace);
-
-          timelineBody = `
-            <div class="tl-meta-row">
-              ${statusBadge}
-              ${startDate ? `<span>${startDate.toLocaleString(this._lang === 'pl' ? 'pl-PL' : 'en-US')}</span>` : ''}
-              ${totalDur !== null ? `<span>${totalDur}ms total</span>` : ''}
-            </div>
-            ${stepsHtml
-              ? `<div class="tl-list">${stepsHtml}</div>`
-              : `<div class="empty-state">${this._t.timelineNoTrace}</div><div class="tl-tip">${this._t.timelineTracingTip}</div>`
-            }`;
-        }
-      } else if (this._selectedTimelineId) {
-        // Has selection but no data yet — auto-trigger fetch
+      } else if (this._timelineData?.empty) {
+        const lastTriggered = this._timelineData.stats?.lastTriggered;
+        timelineBody = `<div class="empty-state" style="text-align:left;padding:20px">
+          ${lastTriggered ? `<div style="margin-bottom:8px;font-size:13px;color:var(--bento-text)">${_esc(this._t.timelineLastTriggered)}: ${_esc(this._formatTimeSince(lastTriggered))}</div>` : ''}
+          <div>${_esc(this._t.timelineNoTrace)}</div>
+        </div><div class="tl-tip">${_esc(this._t.timelineTracingTip)}</div>`;
+      } else if (hasCurrentTrace) {
+        const trace = this._timelineData.trace;
+        const summary = this._timelineData.summary;
+        const startDate = summary?.started_at ? new Date(summary.started_at) : null;
+        const totalDuration = trace.run_duration_ms;
+        const isError = trace.nodes.some(node => node.status === 'error');
+        const statusBadge = isError
+          ? `<span class="tl-meta-badge err">${this._t.timelineFail}</span>`
+          : `<span class="tl-meta-badge ok">${this._t.timelinePass}</span>`;
+        const stepsHtml = this._renderTimelineSteps(trace);
+        timelineBody = `${this._renderTimelineComparison()}
+          <div class="tl-meta-row">
+            ${statusBadge}
+            ${startDate && Number.isFinite(startDate.getTime()) ? `<span>${_esc(startDate.toLocaleString(this._lang === 'pl' ? 'pl-PL' : 'en-US'))}</span>` : ''}
+            ${totalDuration !== null ? `<span>${totalDuration}ms total</span>` : `<span>${this._lang === 'pl' ? 'w toku' : 'running'}</span>`}
+          </div>
+          ${stepsHtml ? `<div class="tl-list">${stepsHtml}</div>` : `<div class="empty-state">${this._t.timelineNoTrace}</div>`}`;
+      } else {
         timelineBody = `<div class="empty-state">${this._t.timelineSelectPrompt}</div>`;
       }
 
@@ -2406,9 +3474,8 @@ class HAAutomationAnalyzer extends HTMLElement {
             ${selectorOptions}
           </select>
         </div>
-        <div class="card" style="padding:var(--aa-space-4)">
-          ${timelineBody}
-        </div>
+        ${runControls}
+        <div class="card" style="padding:var(--aa-space-4)">${timelineBody}</div>
       `;
     }
 
@@ -2649,7 +3716,7 @@ ${styles}
       });
     });
 
-    // Trace notice: dismiss + link
+    // Trace notice: local dismiss only.
     const dismissBtn = this.shadowRoot.getElementById("dismiss-trace-notice");
     if (dismissBtn) {
       dismissBtn.addEventListener("click", () => {
@@ -2658,38 +3725,6 @@ ${styles}
         if (notice) notice.remove();
       });
     }
-    const traceLink = this.shadowRoot.getElementById("trace-viewer-link");
-    if (traceLink) {
-      traceLink.addEventListener("click", () => {
-        // Navigate to Trace Viewer inside HA Tools panel
-        try {
-          let el = this;
-          while (el) {
-            const root = el.getRootNode ? el.getRootNode() : null;
-            el = (root && root.host) ? root.host : el.parentNode;
-            if (el && el.tagName && el.tagName.toLowerCase() === "ha-tools-panel") {
-              if (typeof el._loadTool === "function") {
-                el._loadTool("trace-viewer", "ha-trace-viewer");
-                // Also update sidebar highlight
-                const navItems = el.shadowRoot ? el.shadowRoot.querySelectorAll(".nav-item") : [];
-                navItems.forEach(item => {
-                  if (item.dataset && item.dataset.tool === "trace-viewer") {
-                    if (typeof el._setActiveNav === "function") el._setActiveNav(item);
-                  }
-                });
-                return;
-              }
-            }
-            if (el === document || el === window || !el) break;
-          }
-          // Fallback: navigate to /ha-tools
-          const evt = new CustomEvent("location-changed", { detail: { replace: false } });
-          window.history.pushState(null, "", "/ha-tools");
-          window.dispatchEvent(evt);
-        } catch (e) { window.location.href = "/ha-tools"; }
-      });
-    }
-
     // Filter, sort, time range controls
     const filterInput = this.shadowRoot.getElementById("aa-filter-input");
     if (filterInput) {
@@ -2720,6 +3755,13 @@ ${styles}
       });
     }
 
+    const traceStatsLoad = this.shadowRoot.getElementById('trace-stats-load');
+    if (traceStatsLoad) {
+      traceStatsLoad.addEventListener('click', () => this._loadTraceStatistics({
+        force: this._traceStatsCapability?.status === 'available'
+      }));
+    }
+
     // Click handlers for full automation list items
     this.shadowRoot.querySelectorAll(".auto-item-full").forEach(item => {
       item.addEventListener("click", () => {
@@ -2742,7 +3784,8 @@ ${styles}
     const tlSelect = this.shadowRoot.getElementById("tl-auto-select");
     if (tlSelect) {
       // If we just rendered the timeline tab with a pre-selected automation but no data yet, trigger a fetch
-      if (this.currentTab === 'timeline' && this._selectedTimelineId && !this._timelineData && !this._timelineLoading && !this._timelineError) {
+      if (this.currentTab === 'timeline' && !this._suppressTimelineAutoFetch
+        && this._selectedTimelineId && !this._timelineData && !this._timelineLoading && !this._timelineError) {
         this._fetchTimeline(this._selectedTimelineId);
       }
       tlSelect.addEventListener("change", (e) => {
@@ -2751,6 +3794,7 @@ ${styles}
           this._selectedTimelineId = null;
           this._timelineData = null;
           this._timelineError = null;
+          this._resetTimelineRunState();
           this.render();
           return;
         }
@@ -2758,8 +3802,44 @@ ${styles}
         this._selectedTimelineId = entityId;
         this._timelineData = null;
         this._timelineError = null;
+        this._resetTimelineRunState();
         this._fetchTimeline(entityId);
       });
+    }
+
+    const runSelect = this.shadowRoot.getElementById('tl-run-select');
+    if (runSelect) {
+      runSelect.addEventListener('change', event => {
+        const runId = event.target.value;
+        if (runId && runId !== this._timelineSelectedRunId && this._selectedTimelineId) {
+          this._fetchTimelineRun(this._selectedTimelineId, runId);
+        }
+      });
+    }
+    const baselineSelect = this.shadowRoot.getElementById('tl-baseline-select');
+    const compareButton = this.shadowRoot.getElementById('tl-compare-btn');
+    if (baselineSelect) {
+      baselineSelect.addEventListener('change', event => {
+        this._timelineBaselineRunId = event.target.value || null;
+        this._timelineBaselineData = null;
+        this._timelineComparison = null;
+        this.render();
+      });
+    }
+    if (compareButton) compareButton.addEventListener('click', () => this._compareTimelineRuns());
+    const exportButton = this.shadowRoot.getElementById('tl-export-btn');
+    if (exportButton) exportButton.addEventListener('click', () => this._exportTimelineDiagnostic());
+    for (const id of ['tl-runs-prev', 'tl-runs-next']) {
+      const button = this.shadowRoot.getElementById(id);
+      if (button && !button.disabled) {
+        button.addEventListener('click', () => {
+          this._timelinePageCursor = button.dataset.cursor || null;
+          this._timelineBaselineRunId = null;
+          this._timelineBaselineData = null;
+          this._timelineComparison = null;
+          this.render();
+        });
+      }
     }
   }
 
@@ -2778,10 +3858,11 @@ ${styles}
   }
 
   async _drawCharts() {
-    if (this._isLoading) return;
+    if (!this.isConnected || this._isLoading) return;
     if (this.currentTab === "optimization") return;
     try {
       await this._loadChartJS();
+      if (!this.isConnected) return;
       if (this.currentTab === "overview") {
         this._drawTopAutomationsChart();
       } else if (this.currentTab === "performance") {
@@ -2789,8 +3870,8 @@ ${styles}
         if (this.triggerTypes.size > 0) this._drawTriggerTypeChart();
         this._drawSparklineChart();
       }
-    } catch (e) {
-      console.error("Failed to draw charts:", e);
+    } catch (_error) {
+      console.error('[ha-automation-analyzer] chart_render_failed');
     }
   }
 
@@ -2803,17 +3884,18 @@ ${styles}
 
   _drawTopAutomationsChart() {
     const canvas = this.shadowRoot.getElementById("top-automations-chart");
-    if (!canvas || !window.Chart) return;
+    if (!canvas || !window.Chart || this._traceStatsCapability?.status !== 'available') return;
     this._destroyChart("top-auto");
 
     const data = this.getTopAutomations(5);
     if (data.length === 0) return;
 
-    // Show trace count if no today data
     const hasToday = data.some(a => a.todayCount > 0);
     const labels = data.map(a => a.name.length > 35 ? a.name.substring(0, 33) + "\u2026" : a.name);
     const values = hasToday ? data.map(a => a.todayCount) : data.map(a => a.traceCount);
-    const chartLabel = hasToday ? (this._lang === 'pl' ? 'Dzi\u015B' : 'Today') : (this._lang === 'pl' ? 'Ostatnie uruchomienia' : 'Latest runs');
+    const chartLabel = hasToday
+      ? (this._lang === 'pl' ? 'Zachowane dzi\u015B' : 'Retained today')
+      : (this._lang === 'pl' ? 'Zachowane uruchomienia' : 'Retained runs');
 
     const colors = this._getComputedColors();
     this._charts["top-auto"] = new window.Chart(canvas.getContext("2d"), {
@@ -2866,7 +3948,7 @@ ${styles}
       data: {
         labels: Object.keys(distribution),
         datasets: [{
-          label: this._t.automations,
+          label: this._t.retainedRuns,
           data: Object.values(distribution),
           backgroundColor: barColors,
           borderWidth: 0,
@@ -2923,38 +4005,24 @@ ${styles}
 
   _drawSparklineChart() {
     const canvas = this.shadowRoot.getElementById("sparkline-chart");
-    if (!canvas || !window.Chart) return;
+    const runs = this._traceStatsCapability?.status === 'available'
+      ? this._traceStatsCapability.data?.runs : null;
+    if (!canvas || !window.Chart || !Array.isArray(runs)) return;
     this._destroyChart("sparkline");
 
-    const now = new Date();
+    const now = new Date(Date.now());
     const dailyData = [];
 
-    // Build 14-day data from traces + history
+    // Count only normalized execution summaries retained by Home Assistant.
     for (let i = 13; i >= 0; i--) {
       const day = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
       const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
       const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-      let dayCount = 0;
-
-      // Count from traces
-      this.automationTraces.forEach(traces => {
-        dayCount += traces.filter(t => {
-          const raw = (t.timestamp && typeof t.timestamp === "object") ? t.timestamp.start : t.timestamp;
-          if (!raw) return false;
-          const ts = new Date(raw);
-          return ts >= dayStart && ts < dayEnd;
-        }).length;
-      });
-
-      // If no trace data, try history
-      if (dayCount === 0) {
-        this.automationHistory.forEach(history => {
-          dayCount += history.filter(event => {
-            const eventTime = new Date(event.last_changed);
-            return eventTime >= dayStart && eventTime < dayEnd && event.state === "on";
-          }).length;
-        });
-      }
+      const dayCount = runs.filter(run => {
+        if (run.kind !== 'execution') return false;
+        const timestamp = _aaParseTimestamp(run.started_at);
+        return timestamp !== null && timestamp >= dayStart.getTime() && timestamp < dayEnd.getTime();
+      }).length;
       dailyData.push(dayCount);
     }
 
@@ -3007,18 +4075,36 @@ ${styles}
   }
 
   getGridOptions() {
-    return { rows: 8, columns: 12, min_rows: 3, min_columns: 6 };
+    return { columns: 12, min_columns: 6 };
   }
 
   static getStubConfig() {
     return {
       type: "custom:ha-automation-analyzer",
       title: "Automation Analyzer",
-      show_disabled: true
+      show_disabled: true,
+      auto_refresh: true
     };
   }
 
   disconnectedCallback() {
+    this._lifecycleEpoch += 1;
+    this._invalidateTraceStatistics();
+    this._activeLoadToken = null;
+    this._abortTimelinePipeline();
+    this._pendingLoad = false;
+    this._suppressTimelineAutoFetch = false;
+    this._loadingInProgress = false;
+    this._firstHassRender = false;
+    this._lastRenderTime = 0;
+    this._timelineLoading = false;
+    this._timelineData = null;
+    this._timelineError = null;
+    this._selectedTimelineId = null;
+    this._resetTimelineRunState();
+    this._lastHassConnection = null;
+    this._lastTraceRole = 'unknown';
+    this._lastAutomationSetSignature = '';
     if (this._renderTimer) clearTimeout(this._renderTimer);
     if (this._refreshTimer) clearTimeout(this._refreshTimer);
     this._renderTimer = null;
@@ -3026,12 +4112,9 @@ ${styles}
     this._renderScheduled = false;
     // Clear all Map objects to prevent memory leaks
     this.automationStats.clear();
-    this.automationHistory.clear();
-    this.automationTraces.clear();
     this.triggerTypes.clear();
     this.failedAutomations.clear();
-    this._apiCache.clear();
-    this._cacheTimestamps.clear();
+    this._bulkTraces = null;
     // Destroy Chart.js instances
     Object.values(this._charts).forEach(chart => {
       if (chart && typeof chart.destroy === 'function') chart.destroy();
@@ -3045,6 +4128,13 @@ ${styles}
   }
 }
 
+Object.defineProperty(HAAutomationAnalyzer, 'traceContract', {
+  value: AA_TRACE_CONTRACT,
+  enumerable: true,
+  configurable: false,
+  writable: false
+});
+
 if (!customElements.get('ha-automation-analyzer')) customElements.define("ha-automation-analyzer", HAAutomationAnalyzer);
 
 class HaAutomationAnalyzerEditor extends HTMLElement {
@@ -3054,15 +4144,12 @@ class HaAutomationAnalyzerEditor extends HTMLElement {
     this._config = {};
   }
   setConfig(config) {
-    this._config = { ...config };
-    // Load persisted UI state
-    try {
-      const _saved = localStorage.getItem('ha-tools-automation-analyzer-settings');
-      if (_saved) {
-        const _s = JSON.parse(_saved);
-        if (_s._activeTab) this._activeTab = _s._activeTab;
-      }
-    } catch(e) { console.debug('[ha-automation-analyzer] caught:', e); }
+    const safeConfig = config && typeof config === 'object' ? config : {};
+    this._config = {
+      title: typeof safeConfig.title === 'string' ? safeConfig.title : 'Automation Analyzer',
+      show_disabled: typeof safeConfig.show_disabled === 'boolean' ? safeConfig.show_disabled : true,
+      auto_refresh: typeof safeConfig.auto_refresh === 'boolean' ? safeConfig.auto_refresh : true
+    };
     this._render();
   }
   _dispatch() {
@@ -3082,10 +4169,28 @@ class HaAutomationAnalyzerEditor extends HTMLElement {
               <input type="text" id="cf_title" value="${_esc(this._config?.title || 'Automation Analyzer')}"
                 style="width:100%;padding:8px 12px;border:1px solid var(--divider-color,#e2e8f0);border-radius:8px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#1e293b);font-size:14px;box-sizing:border-box;">
             </div>
+            <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.4;">
+              <input type="checkbox" id="cf_auto_refresh" ${this._config?.auto_refresh === false ? '' : 'checked'}>
+              <span>Automatically refresh this card when Home Assistant state changes</span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.4;margin-top:10px;">
+              <input type="checkbox" id="cf_show_disabled" ${this._config?.show_disabled === false ? '' : 'checked'}>
+              <span>Include disabled automations in the analysis</span>
+            </label>
     `;
         const f_title = this.shadowRoot.querySelector('#cf_title');
         if (f_title) f_title.addEventListener('input', (e) => {
           this._config = { ...this._config, title: e.target.value };
+          this._dispatch();
+        });
+        const f_autoRefresh = this.shadowRoot.querySelector('#cf_auto_refresh');
+        if (f_autoRefresh) f_autoRefresh.addEventListener('change', (e) => {
+          this._config = { ...this._config, auto_refresh: e.target.checked === true };
+          this._dispatch();
+        });
+        const f_showDisabled = this.shadowRoot.querySelector('#cf_show_disabled');
+        if (f_showDisabled) f_showDisabled.addEventListener('change', (e) => {
+          this._config = { ...this._config, show_disabled: e.target.checked === true };
           this._dispatch();
         });
   }

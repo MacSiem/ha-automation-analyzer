@@ -1,0 +1,45 @@
+{
+  "last_step": "action/0/parallel/1",
+  "run_id": "parallel-private-run",
+  "state": "stopped",
+  "script_execution": "finished",
+  "timestamp": {
+    "start": "2026-08-31T11:00:00.000Z",
+    "finish": "2026-08-31T11:00:00.200Z"
+  },
+  "domain": "automation",
+  "item_id": "private-bedroom-routine",
+  "trigger": "PRIVATE_DOOR_OPENED",
+  "trace": {
+    "action/0/parallel/1": [
+      {
+        "path": "action/0/parallel/1",
+        "timestamp": "2026-08-31T11:00:00.090Z"
+      }
+    ],
+    "action/0": [
+      {
+        "path": "action/0",
+        "timestamp": "2026-08-31T11:00:00.020Z"
+      },
+      {
+        "path": "action/0",
+        "timestamp": "2026-08-31T11:00:00.090Z"
+      }
+    ],
+    "action/0/parallel/0": [
+      {
+        "path": "action/0/parallel/0",
+        "timestamp": "2026-08-31T11:00:00.090Z"
+      }
+    ]
+  },
+  "config": {
+    "alias": "PRIVATE_PERSON parallel routine"
+  },
+  "blueprint_inputs": null,
+  "context": {
+    "id": "private-context",
+    "user_id": "private-user-id"
+  }
+}

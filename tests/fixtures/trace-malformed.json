@@ -1,0 +1,23 @@
+{
+  "run_id": "malformed-run",
+  "state": "stopped",
+  "script_execution": "finished",
+  "timestamp": {
+    "start": "2026-08-31T10:00:01.000Z",
+    "finish": "2026-08-31T10:00:00.000Z"
+  },
+  "domain": "automation",
+  "item_id": "private-bedroom-routine",
+  "trace": {
+    "action/0": [
+      {
+        "path": "action/0",
+        "timestamp": "not-a-timestamp"
+      }
+    ]
+  },
+  "config": null,
+  "blueprint_inputs": null,
+  "context": null,
+  "unexpected_root_field": "must fail closed"
+}

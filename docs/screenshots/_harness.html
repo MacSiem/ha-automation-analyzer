@@ -4,91 +4,223 @@
 <meta charset="utf-8">
 <title>AA screenshot harness</title>
 <style>
-  html, body { margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  *, *::before, *::after {
+    animation: none !important;
+    caret-color: transparent !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+  html, body {
+    margin: 0;
+    box-sizing: border-box;
+    width: var(--aa-capture-width);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  body { padding: 4px; }
   body.light { background: #f4f5f7; }
-  body.light ha-automation-analyzer { --card-background-color: #ffffff; --primary-background-color: #f4f5f7; }
+  body.light ha-automation-analyzer {
+    --card-background-color: #ffffff;
+    --primary-background-color: #f4f5f7;
+  }
   body.dark { background: #111318; }
-  body.dark ha-automation-analyzer { --card-background-color: #1c1e26; --primary-background-color: #111318; }
-  ha-automation-analyzer { display: block; width: 480px; }
+  body.dark ha-automation-analyzer {
+    --card-background-color: #1c1e26;
+    --primary-background-color: #111318;
+  }
+  ha-automation-analyzer { display: block; width: 100%; }
 </style>
+<script>
+  (() => {
+    const params = new URLSearchParams(location.search);
+    const theme = params.get("theme");
+    const viewport = params.get("viewport");
+    const seed = params.get("seed");
+    const clock = params.get("clock");
+    const sourceSha256 = params.get("source_sha256");
+    const locale = params.get("locale");
+    const timezone = params.get("timezone");
+    const widths = { desktop: 480, narrow: 360 };
+    const clockMs = Date.parse(clock || "");
+
+    if (!["light", "dark"].includes(theme)) throw new Error("invalid theme");
+    if (!Object.hasOwn(widths, viewport)) throw new Error("invalid viewport");
+    if (!/^[a-z0-9-]+$/.test(seed || "")) throw new Error("invalid seed");
+    if (!Number.isFinite(clockMs)) throw new Error("invalid clock");
+    if (!/^[0-9a-f]{64}$/.test(sourceSha256 || "")) throw new Error("invalid source_sha256");
+    if (locale !== "en-US") throw new Error("invalid locale");
+    if (timezone !== "UTC") throw new Error("invalid timezone");
+
+    const resolvedOptions = Intl.DateTimeFormat().resolvedOptions();
+    if (resolvedOptions.locale !== locale || resolvedOptions.timeZone !== timezone) {
+      throw new Error(`runtime locale/timezone mismatch: ${resolvedOptions.locale}/${resolvedOptions.timeZone}`);
+    }
+
+    const NativeDate = Date;
+    class FixedDate extends NativeDate {
+      constructor(...args) { super(args.length === 0 ? clockMs : args[0]); }
+      static now() { return clockMs; }
+    }
+    window.Date = FixedDate;
+    window.__AA_SCREENSHOT_CONFIG__ = Object.freeze({
+      theme,
+      viewport,
+      seed,
+      clock,
+      clockMs,
+      sourceSha256,
+      locale,
+      timezone,
+      width: widths[viewport],
+    });
+
+    document.documentElement.setAttribute("data-source-sha256", sourceSha256);
+    document.documentElement.setAttribute("data-seed", seed);
+    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute("data-viewport", viewport);
+    document.documentElement.setAttribute("data-locale", resolvedOptions.locale);
+    document.documentElement.setAttribute("data-timezone", resolvedOptions.timeZone);
+    document.documentElement.setAttribute("data-loading", "true");
+    document.documentElement.setAttribute("data-ready", "false");
+  })();
+</script>
 </head>
 <body>
 <ha-automation-analyzer id="card"></ha-automation-analyzer>
 <script>
-  try { localStorage.setItem('ha-intro-dismissed-ha-automation-analyzer', '1'); } catch (e) {}
+  try { localStorage.setItem("ha-intro-dismissed-ha-automation-analyzer", "1"); } catch {}
 </script>
 <script src="../../ha-automation-analyzer.js"></script>
 <script>
-(function () {
-  const params = new URLSearchParams(location.search);
-  const theme = params.get('theme') === 'dark' ? 'dark' : 'light';
-  document.body.className = theme;
-  const now = Date.now(); const h = 3600000;
+  (async () => {
+    const config = window.__AA_SCREENSHOT_CONFIG__;
+    document.body.className = config.theme;
+    document.documentElement.style.setProperty("--aa-capture-width", `${config.width}px`);
+    const hour = 3_600_000;
 
-  const mk = (id, name, state, last, cur) => ({
-    entity_id: 'automation.' + id, state,
-    attributes: { friendly_name: name, last_triggered: last ? new Date(now - last).toISOString() : null, current: cur || 0, mode: 'single', id: id },
-    last_changed: new Date(now - 2 * h).toISOString(), last_updated: new Date(now - 2 * h).toISOString(),
-  });
-  const autos = [
-    mk('morning_lights', 'Morning lights on sunrise', 'on', 3 * h),
-    mk('night_thermostat', 'Night thermostat setback', 'on', 9 * h),
-    mk('door_notify', 'Front door open notification', 'on', 0.4 * h),
-    mk('vacation_presence', 'Vacation presence simulation', 'off', null),
-    mk('water_leak_alert', 'Water leak alert', 'on', 26 * h),
-    mk('garage_autoclose', 'Garage auto-close at night', 'on', 14 * h),
-    mk('media_movie_scene', 'Movie scene on media play', 'on', 50 * h),
-    mk('battery_report', 'Weekly low-battery report', 'on', 120 * h),
-  ];
-  const states = {};
-  autos.forEach(a => { states[a.entity_id] = a; });
+    let randomState = Array.from(config.seed).reduce(
+      (value, char) => ((value * 31) ^ char.charCodeAt(0)) >>> 0,
+      0x9e3779b9,
+    );
+    const nextRandom = () => {
+      randomState ^= randomState << 13;
+      randomState ^= randomState >>> 17;
+      randomState ^= randomState << 5;
+      return (randomState >>> 0) / 0x1_0000_0000;
+    };
 
-  const hass = {
-    language: 'en',
-    themes: { darkMode: theme === 'dark' },
-    states,
-    services: {},
-    connection: { subscribeEvents: () => Promise.resolve(() => {}) },
-    callWS: async (msg) => {
-      const t = String(msg && msg.type || '');
-      if (t === 'config/automation/list') {
-        return autos.map(a => ({ id: a.attributes.id, alias: a.attributes.friendly_name, mode: 'single' }));
-      }
-      if (t.includes('trace/list')) {
-        const itemId = msg.item_id || msg.automation_id;
-        const pool = itemId ? autos.filter(a => a.attributes.id === itemId) : autos;
-        const runs = [];
-        pool.forEach((a, ai) => {
-          const n = [3, 5, 2, 0, 4, 1, 2, 1][ai % 8];
-          for (let i = 0; i < n; i++) {
-            const start = now - (i + 1) * 2.1 * h - ai * 600000;
-            const dur = [45, 180, 920, 60, 1400][(ai + i) % 5];
-            runs.push({
-              run_id: a.attributes.id + '-' + i,
-              item_id: a.attributes.id,
-              state: 'stopped',
-              script_execution: 'finished',
-              timestamp: { start: new Date(start).toISOString(), finish: new Date(start + dur).toISOString() },
-              last_step: 'action/0',
+    const makeAutomation = (index, state, hoursAgo) => {
+      const id = `demo_rule_${String(index).padStart(2, "0")}`;
+      return {
+        entity_id: `automation.${id}`,
+        state,
+        attributes: {
+          friendly_name: `Demo automation ${String(index).padStart(2, "0")}`,
+          last_triggered: hoursAgo == null
+            ? null
+            : new Date(config.clockMs - hoursAgo * hour).toISOString(),
+          current: 0,
+          mode: "single",
+          id,
+        },
+        last_changed: new Date(config.clockMs - 2 * hour).toISOString(),
+        last_updated: new Date(config.clockMs - 2 * hour).toISOString(),
+      };
+    };
+
+    const autos = [
+      makeAutomation(1, "on", 0.4),
+      makeAutomation(2, "on", 3),
+      makeAutomation(3, "on", 9),
+      makeAutomation(4, "on", 14),
+      makeAutomation(5, "on", 26),
+      makeAutomation(6, "on", 50),
+      makeAutomation(7, "on", 120),
+      makeAutomation(8, "off", null),
+    ];
+    const states = Object.fromEntries(autos.map((automation) => [automation.entity_id, automation]));
+
+    const hass = {
+      language: config.locale,
+      themes: { darkMode: config.theme === "dark" },
+      states,
+      services: {},
+      connection: { subscribeEvents: () => Promise.resolve(() => {}) },
+      callWS: async (message) => {
+        const type = String(message?.type || "");
+        if (type === "config/automation/list") {
+          return autos.map((automation) => ({
+            id: automation.attributes.id,
+            alias: automation.attributes.friendly_name,
+            mode: "single",
+          }));
+        }
+        if (type.includes("trace/list")) {
+          const itemId = message.item_id || message.automation_id;
+          const pool = itemId
+            ? autos.filter((automation) => automation.attributes.id === itemId)
+            : autos;
+          return pool.flatMap((automation, automationIndex) => {
+            const count = [3, 5, 2, 0, 4, 1, 2, 1][automationIndex % 8];
+            return Array.from({ length: count }, (_, runIndex) => {
+              const start = config.clockMs
+                - (runIndex + 1) * 2.1 * hour
+                - automationIndex * 600_000;
+              const duration = 40 + Math.floor(nextRandom() * 1_360);
+              return {
+                run_id: `${automation.attributes.id}-${runIndex}`,
+                item_id: automation.attributes.id,
+                state: "stopped",
+                script_execution: "finished",
+                timestamp: {
+                  start: new Date(start).toISOString(),
+                  finish: new Date(start + duration).toISOString(),
+                },
+                last_step: "action/0",
+              };
             });
-          }
-        });
-        return runs;
-      }
-      return {};
-    },
-    callApi: async () => ({}),
-    callService: async () => ({}),
-  };
+          });
+        }
+        return {};
+      },
+      callApi: async () => ({}),
+      callService: async () => ({}),
+    };
 
-  const card = document.getElementById('card');
-  card.setConfig({ type: 'custom:ha-automation-analyzer', title: 'Automation Analyzer' });
-  card.hass = hass;
-  setTimeout(() => { card.hass = { ...hass }; }, 400);
-  const scrub = () => { try { card.shadowRoot && card.shadowRoot.querySelectorAll('#tip-banner, [class*="banner"], .donate-section').forEach(n => n.remove()); } catch (e) {} };
-  setInterval(scrub, 150);
-  setTimeout(() => { scrub(); document.title = 'AA-READY'; }, 1300);
-})();
+    const card = document.getElementById("card");
+    card.setAttribute("data-source-sha256", config.sourceSha256);
+    card.setConfig({ type: "custom:ha-automation-analyzer", title: "Automation Analyzer" });
+    card.hass = hass;
+
+    let settled = false;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const loading = card._loadingInProgress || card._isLoading;
+      const title = card.shadowRoot?.querySelector("h1, .header-title, .title")?.textContent || "";
+      if (!loading && /Automation Analyzer/.test(title)) {
+        settled = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (!settled) throw new Error("card did not settle before the screenshot deadline");
+
+    card.shadowRoot
+      ?.querySelectorAll("#tip-banner, [class*='banner'], .donate-section")
+      .forEach((element) => element.remove());
+    await card._drawCharts?.();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (card._loadingInProgress || card._isLoading) {
+      throw new Error("card did not settle before the screenshot deadline");
+    }
+
+    document.documentElement.setAttribute("data-loading", "false");
+    document.documentElement.setAttribute("data-ready", "true");
+    document.title = "AA-READY";
+    window.__AA_SCREENSHOT_READY__ = true;
+  })().catch((error) => {
+    document.documentElement.setAttribute("data-ready", "error");
+    document.documentElement.setAttribute("data-error", String(error?.message || error));
+    throw error;
+  });
 </script>
 </body>
 </html>

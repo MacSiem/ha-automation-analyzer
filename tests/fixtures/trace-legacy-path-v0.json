@@ -1,0 +1,22 @@
+{
+  "run_id": "legacy-private-run",
+  "state": "stopped",
+  "script_execution": "finished",
+  "timestamp": {
+    "start": "2026-08-31T09:00:00.000Z",
+    "finish": "2026-08-31T09:00:00.080Z"
+  },
+  "domain": "automation",
+  "item_id": "private-bedroom-routine",
+  "path": [
+    {
+      "path": "trigger/0",
+      "timestamp": "2026-08-31T09:00:00.010Z"
+    },
+    {
+      "path": "action/0",
+      "timestamp": "2026-08-31T09:00:00.040Z",
+      "error": "PRIVATE_ERROR person.private_resident"
+    }
+  ]
+}

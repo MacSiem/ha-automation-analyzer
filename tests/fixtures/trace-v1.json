@@ -1,0 +1,70 @@
+{
+  "last_step": "action/1",
+  "run_id": "private-run-2026-08-31",
+  "state": "stopped",
+  "script_execution": "finished",
+  "timestamp": {
+    "start": "2026-08-31T08:00:00.000Z",
+    "finish": "2026-08-31T08:00:00.120Z"
+  },
+  "domain": "automation",
+  "item_id": "private-bedroom-routine",
+  "trigger": "event 'PRIVATE_DOOR_OPENED' for person.private_resident",
+  "trace": {
+    "action/1": [
+      {
+        "path": "action/1",
+        "timestamp": "2026-08-31T08:00:00.090Z",
+        "changed_variables": {
+          "resident": "PRIVATE_PERSON",
+          "entity_id": "person.private_resident"
+        },
+        "result": {
+          "params": {
+            "service_data": {
+              "message": "PRIVATE_MESSAGE"
+            }
+          }
+        }
+      }
+    ],
+    "trigger/0": [
+      {
+        "path": "trigger/0",
+        "timestamp": "2026-08-31T08:00:00.010Z",
+        "child_id": {
+          "domain": "script",
+          "item_id": "private-child-script",
+          "run_id": "private-child-run"
+        }
+      }
+    ],
+    "action/0": [
+      {
+        "path": "action/0",
+        "timestamp": "2026-08-31T08:00:00.050Z",
+        "template_errors": [
+          "PRIVATE_TEMPLATE_ERROR person.private_resident"
+        ]
+      }
+    ]
+  },
+  "config": {
+    "id": "private-bedroom-routine",
+    "alias": "Private bedroom routine",
+    "actions": [
+      {
+        "action": "notify.private_phone",
+        "data": {
+          "message": "PRIVATE_MESSAGE"
+        }
+      }
+    ]
+  },
+  "blueprint_inputs": null,
+  "context": {
+    "id": "private-context",
+    "parent_id": null,
+    "user_id": "private-user-id"
+  }
+}
