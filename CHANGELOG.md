@@ -1,3 +1,10 @@
+## 4.2.1 (2026-09-24)
+
+- Fix (#2): the card no longer stays on "Fetching automation configuration…" on busy Home Assistant instances. Routine state updates create a new `hass` object many times per second; 4.2.0 treated each one as a new session and restarted the load, which never finished and repeatedly re-requested automation configs. Loads, timeline and trace-statistics work are now cancelled only when the connection, the user role or the set of automations changes.
+- Fix: automation configs are read with Home Assistant's `automation/config` WebSocket command, one request per automation with bounded concurrency and a 10-minute per-session cache. The previous bulk command does not exist in Home Assistant, so every load fell back to REST calls and silently stopped after 60 enabled automations; all automations are now analysed.
+- Fix: non-admin users keep state-based statistics without calling admin-only commands, and the enable/disable confirmation toast is no longer dropped by the state change it causes.
+- Performance: the card re-renders on session changes and on its throttled refresh instead of on every state update.
+
 ## 4.2.0 (2026-09-01)
 
 - Feature: add a versioned Home Assistant trace contract with strict normalization and bounded trace data for the timeline view.
