@@ -1,4 +1,4 @@
-/* HA Tools split — ha-automation-analyzer v4.2.1 (2026-09-24) — single-tool standalone repo */
+/* HA Tools split — ha-automation-analyzer v4.2.2 (2026-09-24) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -1294,6 +1294,8 @@ class HAAutomationAnalyzer extends HTMLElement {
     this.triggerTypes = new Map();
     this.failedAutomations = new Map();
     this.disabledAutomations = [];
+    this.unavailableAutomations = [];
+    this._showOnlyUnavailable = false;
     this._charts = {};
     this._chartJsLoaded = false;
     this._isLoading = true;
@@ -1511,6 +1513,9 @@ class HAAutomationAnalyzer extends HTMLElement {
         totalLabel: '\u0141\u0105cznie',
         active: 'Aktywnych',
         disabledLabel: 'Wy\u0142\u0105czonych',
+        unavailableBanner: 'automatyzacji jest niedostępnych — ich konfiguracja jest nieprawidłowa lub została usunięta, więc nie mogą się uruchomić. Sprawdź Ustawienia → Naprawy i log Home Assistanta.',
+        showUnavailable: 'Pokaż niedostępne',
+        showAllAutomations: 'Pokaż wszystkie',
         errorsLabel: 'B\u0142\u0119dy w trasach',
         searchPlaceholder: 'Szukaj automatyzacji\u2026',
         runsTodayOption: 'Zachowane dzi\u015B',
@@ -1638,6 +1643,9 @@ class HAAutomationAnalyzer extends HTMLElement {
         totalLabel: 'Total',
         active: 'Active',
         disabledLabel: 'Disabled',
+        unavailableBanner: 'automations are unavailable — their configuration is invalid or was removed, so they cannot run. Check Settings → Repairs and the Home Assistant log.',
+        showUnavailable: 'Show unavailable',
+        showAllAutomations: 'Show all',
         errorsLabel: 'Trace errors',
         searchPlaceholder: 'Search automations\u2026',
         runsTodayOption: 'Retained today',
@@ -1882,6 +1890,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     if (this.automationStats.size === 0) return 0;
     const total = this.automationStats.size;
     const disabled = this.disabledAutomations.length;
+    const unavailable = this.unavailableAutomations.length;
     const failed = this.failedAutomations.size;
     const slow = Array.from(this.automationStats.values()).filter(a => typeof a.avgExecutionTime === "number" && a.avgExecutionTime > 800).length;
     const stale = Array.from(this.automationStats.values()).filter(a => {
@@ -1891,6 +1900,8 @@ class HAAutomationAnalyzer extends HTMLElement {
     }).length;
     let score = 100;
     score -= (disabled / total) * 15;
+    // Unavailable automations cannot run at all; any of them caps the score below "Excellent".
+    if (unavailable > 0) score = Math.min(score - (unavailable / total) * 40, 74);
     score -= (failed / total) * 25;
     score -= (slow / total) * 10;
     score -= (stale / total) * 5;
@@ -1915,6 +1926,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       this.triggerTypes.clear();
       this.failedAutomations.clear();
       this.disabledAutomations = [];
+      this.unavailableAutomations = [];
       this.executionTimes = [];
 
       // --- Phase 1: Instant pass using hass states only (ZERO API calls) ---
@@ -1923,6 +1935,12 @@ class HAAutomationAnalyzer extends HTMLElement {
         const name = this._sanitize(entity.attributes?.friendly_name || id.replace("automation.", ""));
         const isDisabled = entity.state === "off";
         if (isDisabled && !this.config.show_disabled) continue;
+        // Home Assistant keeps an unavailable automation entity when its configuration
+        // is invalid or was removed; it can never run, so it is a problem, not "unknown".
+        const isUnavailable = entity.state === "unavailable" || entity.state === "unknown";
+        if (isUnavailable) {
+          this.unavailableAutomations.push({ id, name, automationId: entity.attributes?.id || id.replace("automation.", "") });
+        }
 
         const internalId = entity.attributes?.id || id.replace("automation.", "");
 
@@ -1955,7 +1973,10 @@ class HAAutomationAnalyzer extends HTMLElement {
       // --- Phase 2: Fetch automation configs (enriches trigger types) ---
       this._loadingPhase = this._lang === 'pl' ? "Pobieranie konfiguracji automatyzacji..." : "Fetching automation configuration...";
       this.render();
-      const allConfigs = await this._getAllAutomationConfigs(automations, loadToken);
+      const allConfigs = await this._getAllAutomationConfigs(
+        automations.filter(([, entity]) => entity.state !== "unavailable" && entity.state !== "unknown"),
+        loadToken
+      );
       if (inactive()) return;
       const configByEntityId = new Map();
       for (const [entityId, entity] of automations) {
@@ -2764,6 +2785,17 @@ class HAAutomationAnalyzer extends HTMLElement {
       }
       .stat-value { font-size: 22px; font-weight: 700; color: var(--bento-primary); }
       .stat-label { font-size: 11px; color: var(--bento-text-secondary); margin-top: 2px; }
+      .unavailable-banner {
+        display: flex; align-items: center; justify-content: space-between; gap: var(--aa-space-3, 12px);
+        flex-wrap: wrap; margin: var(--aa-space-3, 12px) 0; padding: 10px 12px; border-radius: 8px;
+        border: 1px solid var(--warning-color, #f59e0b); color: var(--primary-text-color);
+        background: color-mix(in srgb, var(--warning-color, #f59e0b) 12%, transparent); font-size: 13px;
+      }
+      .unavailable-toggle {
+        min-height: 36px; padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit;
+        border: 1px solid var(--warning-color, #f59e0b); background: transparent; color: var(--primary-text-color);
+      }
+      .unavailable-toggle:focus-visible { outline: 2px solid var(--primary-color, #3b82f6); outline-offset: 2px; }
       .health-row {
         display: flex; align-items: center; gap: var(--aa-space-3);
         margin-bottom: var(--aa-space-4);
@@ -3109,6 +3141,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       total: this.automationStats.size,
       active: totalActive,
       disabled: this.disabledAutomations.length,
+      unavailable: this.unavailableAutomations.length,
       failed: hasTraceStatistics ? this.failedAutomations.size : null,
       avgTime: this.executionTimes.length > 0
         ? Math.round(this.executionTimes.reduce((a, b) => a + b, 0) / this.executionTimes.length)
@@ -3122,6 +3155,12 @@ class HAAutomationAnalyzer extends HTMLElement {
     // --- Filter and sort the full automation list ---
     const allAutos = Array.from(this.automationStats.values());
     let filteredAutos = allAutos;
+    if (this._showOnlyUnavailable && this.unavailableAutomations.length > 0) {
+      const unavailableIds = new Set(this.unavailableAutomations.map(item => item.id));
+      filteredAutos = filteredAutos.filter(a => unavailableIds.has(a.id));
+    } else {
+      this._showOnlyUnavailable = false;
+    }
 
     // Text filter
     if (this._filterText) {
@@ -3186,6 +3225,10 @@ class HAAutomationAnalyzer extends HTMLElement {
             <div class="health-label">${this._t.systemHealthScope}</div>
           </div>
         </div>
+        ${stats.unavailable > 0 ? `<div class="unavailable-banner" role="status">
+          <span><b>${stats.unavailable}</b> ${this._t.unavailableBanner}</span>
+          <button type="button" class="unavailable-toggle" id="aa-unavailable-toggle" aria-pressed="${this._showOnlyUnavailable}">${this._showOnlyUnavailable ? this._t.showAllAutomations : this._t.showUnavailable}</button>
+        </div>` : ''}
         <div class="stats">
           <div class="stat">
             <div class="stat-value">${stats.total}</div>
@@ -3737,6 +3780,13 @@ ${styles}
         this._traceNoticeDismissed = true;
         const notice = this.shadowRoot.getElementById("trace-storage-notice");
         if (notice) notice.remove();
+      });
+    }
+    const unavailableToggle = this.shadowRoot.getElementById("aa-unavailable-toggle");
+    if (unavailableToggle) {
+      unavailableToggle.addEventListener("click", () => {
+        this._showOnlyUnavailable = !this._showOnlyUnavailable;
+        this.render();
       });
     }
     // Filter, sort, time range controls
