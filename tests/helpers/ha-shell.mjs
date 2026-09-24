@@ -319,7 +319,20 @@ export function createHassFixture({
       record('callWS', message);
       const held = maybeGate(message.type);
       if (held) return held;
-      if (message.type === 'config/automation/list') return configList;
+      if (message.type === 'automation/config') {
+        // Mirrors Home Assistant: one admin-only command per automation entity.
+        if (message.entity_id !== entityId) {
+          const error = new Error('Entity not found');
+          error.code = 'not_found';
+          throw error;
+        }
+        return { config: configList[0] || null };
+      }
+      if (message.type === 'config/automation/list') {
+        const error = new Error('Unknown command.');
+        error.code = 'unknown_command';
+        throw error;
+      }
       if (message.type === 'trace/list') {
         return traces
           .map(trace => ({ domain: 'automation', ...trace }))

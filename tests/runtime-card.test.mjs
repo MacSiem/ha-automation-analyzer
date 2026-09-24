@@ -191,28 +191,23 @@ test('automation navigation encodes the complete identifier before handing it to
   assert.deepEqual(shell.errors, []);
 });
 
-test('per-automation config fallback encodes identifiers before building an API path', { concurrency: false }, async t => {
+test('automation config is read with the entity-scoped WebSocket command, never a built REST path', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());
   shell.startCase();
   const hostileIdentifier = '../../auth/token?token=PRIVATE_MESSAGE#fragment';
   const hass = createHassFixture({ label: 'config-path', internalId: hostileIdentifier });
-  const nativeCallWS = hass.callWS.bind(hass);
-  hass.callWS = async message => {
-    if (message.type === 'config/automation/list') {
-      hass.__calls.push({ kind: 'callWS', payload: message, label: 'config-path' });
-      throw new Error('bulk config unavailable');
-    }
-    return nativeCallWS(message);
-  };
   const card = shell.mount(hass);
   await waitForLoaded(card);
 
-  const fallbackCalls = hass.__calls.filter(call => call.kind === 'callApi');
-  assert.deepEqual(fallbackCalls.map(call => call.payload.path), [
-    `config/automation/config/${encodeURIComponent(hostileIdentifier)}`,
+  const configCalls = hass.__calls.filter(call => call.kind === 'callWS'
+    && call.payload.type === 'automation/config');
+  assert.deepEqual(JSON.parse(JSON.stringify(configCalls.map(call => call.payload))), [
+    { type: 'automation/config', entity_id: 'automation.config-path' },
   ]);
-  assert.doesNotMatch(fallbackCalls[0].payload.path, /\.\.\/|\?|#/);
+  assert.equal(hass.__calls.some(call => call.kind === 'callApi'), false);
+  assert.equal(hass.__calls.some(call => call.payload?.type === 'config/automation/list'), false);
+  assert.deepEqual([...card.automationStats.get('automation.config-path').triggerTypes], ['state']);
   card.remove();
   assert.deepEqual(shell.errors, []);
 });
@@ -276,13 +271,13 @@ test('a delayed HA completion cannot mutate or continue work for a detached card
   const hass = createHassFixture({
     label: 'delayed',
     friendlyName: 'Delayed automation',
-    gates: { 'config/automation/list': configGate },
+    gates: { 'automation/config': configGate },
   });
   const card = shell.mount(hass);
   await waitFor(
     () => hass.__calls.some(call => call.kind === 'callWS'
-      && call.payload.type === 'config/automation/list'),
-    'held config/automation/list request',
+      && call.payload.type === 'automation/config'),
+    'held automation/config request',
   );
 
   card.remove();
@@ -671,12 +666,12 @@ test('a newer hass snapshot supersedes one in-flight load without mixing state',
   const oldHass = createHassFixture({
     label: 'superseded',
     friendlyName: 'Superseded automation',
-    gates: { 'config/automation/list': oldGate },
+    gates: { 'automation/config': oldGate },
   });
   const card = shell.mount(oldHass);
   await waitFor(
     () => oldHass.__calls.some(call => call.kind === 'callWS'
-      && call.payload.type === 'config/automation/list'),
+      && call.payload.type === 'automation/config'),
     'superseded in-flight config request',
   );
 
@@ -707,7 +702,7 @@ test('a newer hass snapshot supersedes one in-flight load without mixing state',
   );
   assert.equal(
     freshHass.__calls.filter(call => call.kind === 'callWS'
-      && call.payload.type === 'config/automation/list').length,
+      && call.payload.type === 'automation/config').length,
     1,
   );
   card.remove();
@@ -743,7 +738,7 @@ test('reconnecting the same element performs one coherent refresh with fresh has
   assert.equal(card._renderTimer, null);
   assert.equal(
     freshHass.__calls.filter(call => call.kind === 'callWS'
-      && call.payload.type === 'config/automation/list').length,
+      && call.payload.type === 'automation/config').length,
     1,
     'fresh hass should produce exactly one config refresh',
   );
@@ -778,5 +773,62 @@ test('chart fallback compacts its canvas wrapper instead of leaving a blank pane
 
   card.remove();
   assert.deepEqual(componentLeaks(shell, card), { listeners: [], observers: [] });
+  assert.deepEqual(shell.errors, []);
+});
+
+test('routine hass updates during a load do not restart it (issue #2 livelock)', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+
+  const configGate = deferred();
+  const hass = createHassFixture({
+    label: 'busy-home',
+    friendlyName: 'Busy home automation',
+    gates: { 'automation/config': configGate },
+  });
+  const card = shell.mount(hass);
+  await waitFor(
+    () => hass.__calls.some(call => call.kind === 'callWS' && call.payload.type === 'automation/config'),
+    'first automation/config request',
+  );
+
+  // A real home produces a new hass object for every state change. Same connection, same user,
+  // same automation set: the in-flight load must survive all of them.
+  for (let i = 0; i < 50; i += 1) {
+    const next = Object.create(hass);
+    next.states = {
+      ...hass.states,
+      'sensor.power': { entity_id: 'sensor.power', state: String(i), attributes: {} },
+    };
+    card.hass = next;
+    await flushTurns(1);
+  }
+  configGate.resolve({ config: { id: 'busy-home', alias: 'Busy home automation', trigger: [{ platform: 'time' }], action: [], condition: [] } });
+  await waitFor(() => card._loadingInProgress === false && card._loadingPhase === '', 'load completion under churn');
+  await flushTurns();
+
+  const configCalls = hass.__calls.filter(call => call.kind === 'callWS' && call.payload.type === 'automation/config');
+  assert.equal(configCalls.length, 1, 'churn must not restart the config fetch');
+  assert.deepEqual([...card.automationStats.get('automation.busy-home').triggerTypes], ['time']);
+  assert.doesNotMatch(card.shadowRoot.textContent, /Fetching automation configuration/);
+  card.remove();
+  assert.deepEqual(componentLeaks(shell, card), { listeners: [], observers: [] });
+  assert.deepEqual(shell.errors, []);
+});
+
+test('non-admin users keep state statistics without calling admin-only config commands', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'family-user', friendlyName: 'Family automation' });
+  hass.user = { id: 'family', name: 'Family', is_admin: false, is_owner: false };
+  const card = shell.mount(hass);
+  await waitForLoaded(card);
+  assert.equal(hass.__calls.some(call => call.payload?.type === 'automation/config'), false);
+  assert.equal(hass.__calls.some(call => call.kind === 'callApi'), false);
+  assert.equal(card._loadingPhase, '');
+  assert.equal(card.automationStats.has('automation.family-user'), true);
+  card.remove();
   assert.deepEqual(shell.errors, []);
 });

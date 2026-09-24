@@ -147,12 +147,16 @@
       connection: { subscribeEvents: () => Promise.resolve(() => {}) },
       callWS: async (message) => {
         const type = String(message?.type || "");
-        if (type === "config/automation/list") {
-          return autos.map((automation) => ({
-            id: automation.attributes.id,
-            alias: automation.attributes.friendly_name,
-            mode: "single",
-          }));
+        if (type === "automation/config") {
+          const automation = states[message.entity_id];
+          if (!automation) throw Object.assign(new Error("Entity not found"), { code: "not_found" });
+          return {
+            config: {
+              id: automation.attributes.id,
+              alias: automation.attributes.friendly_name,
+              mode: "single",
+            },
+          };
         }
         if (type.includes("trace/list")) {
           const itemId = message.item_id || message.automation_id;

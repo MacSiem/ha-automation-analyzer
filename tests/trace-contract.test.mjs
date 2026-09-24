@@ -1209,8 +1209,11 @@ test('auto_refresh config is boolean-only, local, and resumes without panel help
   card.hass = hass;
   await flushTurns();
   assert.equal(hass.__calls.length, callsBefore);
+  const updatedBefore = card._lastUpdated;
   card.setConfig({ auto_refresh: true });
-  await waitFor(() => hass.__calls.length > callsBefore, 'config refresh resume');
+  // Automation configs are cached per session, so a resumed refresh re-reads states without
+  // repeating admin-only config calls; resumption is observed through the refreshed data.
+  await waitFor(() => card._lastUpdated !== updatedBefore && !card._loadingInProgress, 'config refresh resume');
   card.remove();
   assert.equal(readFileSync(new URL('./helpers/ha-shell.mjs', import.meta.url), 'utf8').includes('autoRefreshCb'), false);
 });

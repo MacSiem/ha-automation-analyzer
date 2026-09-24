@@ -36,7 +36,7 @@ extra integration:
 |---|---|
 | Discovering all automations | Loading global trace statistics (admin only) |
 | Health score, activity and configuration analysis | Selecting or comparing Timeline runs (admin only) |
-| Configuration-derived trigger/action/condition counts | Exporting a redacted local diagnostic file |
+| Configuration-derived trigger/action/condition counts (administrators; read with `automation/config`) | Exporting a redacted local diagnostic file |
 | No trace requests on Overview | Increasing `stored_traces` for deeper retained history |
 
 ## Screenshots
