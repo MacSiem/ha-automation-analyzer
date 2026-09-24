@@ -1,3 +1,8 @@
+## 4.2.2 (2026-09-24)
+
+- Automations whose entity is `unavailable` (invalid or removed configuration, so they can never run) are now reported: a banner shows how many there are, a toggle lists only them, and any unavailable automation keeps the health score below "Excellent". Previously such a system could score 98 "Excellent".
+- The card no longer requests the configuration of unavailable automations (Home Assistant always answers `not_found` for them).
+
 ## 4.2.1 (2026-09-24)
 
 - Fix (#2): the card no longer stays on "Fetching automation configuration…" on busy Home Assistant instances. Routine state updates create a new `hass` object many times per second; 4.2.0 treated each one as a new session and restarted the load, which never finished and repeatedly re-requested automation configs. Loads, timeline and trace-statistics work are now cancelled only when the connection, the user role or the set of automations changes.

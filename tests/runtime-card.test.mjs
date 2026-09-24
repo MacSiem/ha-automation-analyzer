@@ -832,3 +832,29 @@ test('non-admin users keep state statistics without calling admin-only config co
   card.remove();
   assert.deepEqual(shell.errors, []);
 });
+
+test('unavailable automations are reported, lower the score and are not queried for config', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'broken-config', friendlyName: 'Broken config automation', state: 'unavailable' });
+  const card = shell.mount(hass);
+  await waitForLoaded(card);
+
+  assert.equal(hass.__calls.some(call => call.payload?.type === 'automation/config'), false);
+  assert.equal(card.unavailableAutomations.length, 1);
+  assert.ok(card._calculateHealthScore() <= 74, 'an unavailable automation must not score as Excellent');
+  const banner = card.shadowRoot.querySelector('.unavailable-banner');
+  assert.ok(banner, 'banner is rendered');
+  assert.match(banner.textContent, /1\s+automations are unavailable/);
+  const toggle = card.shadowRoot.getElementById('aa-unavailable-toggle');
+  assert.equal(toggle.getAttribute('aria-pressed'), 'false');
+  toggle.click();
+  await flushTurns();
+  assert.equal(card._showOnlyUnavailable, true);
+  assert.equal(card.shadowRoot.getElementById('aa-unavailable-toggle').getAttribute('aria-pressed'), 'true');
+  assert.match(card.shadowRoot.textContent, /Broken config automation/);
+  card.remove();
+  assert.deepEqual(componentLeaks(shell, card), { listeners: [], observers: [] });
+  assert.deepEqual(shell.errors, []);
+});
