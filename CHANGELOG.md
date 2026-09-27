@@ -1,3 +1,8 @@
+## Unreleased — integration development branch
+
+- Add an optional Home Assistant integration with an administrator panel and on-demand server-side retained-trace summary. The summary sends only bounded counts and durations to the browser.
+- Keep the existing standalone dashboard card and native trace path for current HACS users; the category change is pending.
+
 ## 4.2.2 (2026-09-24)
 
 - Automations whose entity is `unavailable` (invalid or removed configuration, so they can never run) are now reported: a banner shows how many there are, a toggle lists only them, and any unavailable automation keeps the health score below "Excellent". Previously such a system could score 98 "Excellent".

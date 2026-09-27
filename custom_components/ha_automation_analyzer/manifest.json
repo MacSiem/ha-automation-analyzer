@@ -1,0 +1,14 @@
+{
+  "domain": "ha_automation_analyzer",
+  "name": "Automation Analyzer",
+  "codeowners": ["@MacSiem"],
+  "config_flow": true,
+  "dependencies": ["frontend", "http", "lovelace", "panel_custom", "trace", "websocket_api"],
+  "documentation": "https://github.com/MacSiem/ha-automation-analyzer",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/MacSiem/ha-automation-analyzer/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "5.0.0"
+}

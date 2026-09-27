@@ -1,0 +1,4 @@
+{
+  "config": {"step": {"user": {"title": "Automation Analyzer", "description": "Dodaj panel i kartę Automation Analyzer do analizy tylko do odczytu."}}},
+  "options": {"step": {"init": {"title": "Opcje Automation Analyzer", "data": {"show_panel": "Pokaż panel boczny"}}}}
+}

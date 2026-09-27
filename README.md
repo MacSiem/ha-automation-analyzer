@@ -10,8 +10,9 @@ every `automation.*` entity in your instance.
 
 ## How it works
 
-**Short version: it works automatically.** The card needs no configuration and no
-extra integration:
+**Short version: it works automatically.** The dashboard card needs no configuration.
+The optional integration adds an administrator sidebar panel and a server-side,
+privacy-minimized trace summary:
 
 1. **Instant overview from HA state.** On load, the card reads every `automation.*`
    entity (state, `last_triggered`) and immediately renders a system health score,
@@ -23,7 +24,10 @@ extra integration:
    It does not fetch state history or traces from Overview or in the background.
 3. **Traces only where requested.** Opening Timeline loads the selected automation's
    trace list and one selected run. An administrator can explicitly load one global
-   trace-summary snapshot from Performance or Optimization. Home Assistant exposes
+   trace-summary snapshot from Performance or Optimization. With the integration,
+   Home Assistant computes counts and durations on the server without sending a
+   global raw trace list to the browser. The standalone card uses the native
+   `trace/list` endpoint. Home Assistant exposes
    `trace/list` and `trace/get` to administrators only; non-admin users see an honest
    capability message and the card makes no trace request.
 4. **Trace limits apply.** Home Assistant keeps only the last 5 traces per automation
@@ -50,10 +54,19 @@ Dark mode follows your Home Assistant theme automatically.*
 
 ## Installation
 
+For the currently published dashboard package:
+
 1. Open HACS → Custom repositories.
-2. Add `https://github.com/MacSiem/ha-automation-analyzer` as category **Dashboard**
-   (Lovelace plugin).
+2. Add `https://github.com/MacSiem/ha-automation-analyzer` as category **Dashboard**.
 3. Install **HA Automation Analyzer** and reload your browser.
+
+The integration package is prepared on the development branch. For a manual
+development installation, copy `custom_components/ha_automation_analyzer` into
+`<config>/custom_components/`, restart Home Assistant, and add **Automation Analyzer**
+under Settings → Devices & services. It serves the same card and registers a
+sidebar panel for administrators. Remove a separate Dashboard installation when
+switching packages to avoid loading two versions of the card. HACS integration
+installation will require the repository category change to be accepted first.
 
 ## Quick start
 
@@ -106,8 +119,9 @@ local sequential aliases. The file is created locally in the browser and is not
 uploaded.
 
 **Does this send data anywhere?**
-No telemetry and no external runtime requests — all analysis runs locally in your
-browser against your Home Assistant instance. If Chart.js is not already available
+No telemetry and no external runtime requests — analysis runs inside your Home
+Assistant instance. The integration summarizes retained traces on the server;
+the standalone card reads them through Home Assistant's WebSocket API. If Chart.js is not already available
 in the Home Assistant frontend, the card shows a compact numerical fallback instead
 of downloading a library from a CDN.
 

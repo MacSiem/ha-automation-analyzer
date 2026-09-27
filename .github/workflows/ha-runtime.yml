@@ -1,0 +1,31 @@
+name: ha-runtime
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  ha-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Home Assistant test harness
+        run: |
+          pip install pytest-homeassistant-custom-component
+          # Requirements of the core integrations this integration depends on
+          # (frontend serves the panel; panel_custom needs it).
+          pip install $(python - <<'PY'
+          import json, os, homeassistant
+          base = os.path.join(os.path.dirname(homeassistant.__file__), "components")
+          reqs = set()
+          for name in ("frontend", "http", "lovelace", "panel_custom", "trace", "websocket_api"):
+              reqs.update(json.load(open(os.path.join(base, name, "manifest.json"))).get("requirements", []))
+          print(" ".join(sorted(reqs)))
+          PY
+          )
+      - name: Integration inside a real Home Assistant core
+        run: python -m pytest tests_ha -o asyncio_mode=auto -o asyncio_default_fixture_loop_scope=function -p no:cacheprovider

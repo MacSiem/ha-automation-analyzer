@@ -813,6 +813,44 @@ test('explicit normalized trace statistics drive retained counts, timings, and f
   card.remove();
 });
 
+test('integration summary supplies statistics without fetching global raw traces', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'server-summary' });
+  hass.config.components = ['ha_automation_analyzer'];
+  const nativeCallWS = hass.callWS.bind(hass);
+  hass.callWS = async message => {
+    if (message.type !== 'ha_automation_analyzer/summary') return nativeCallWS(message);
+    hass.__calls.push({ kind: 'callWS', payload: message, label: 'server-summary' });
+    return {
+      schema: 'aa-trace-summary-v1',
+      run_count: 2,
+      execution_count: 2,
+      by_automation: { 'server-summary': { trace_count: 2, today_count: 1, error_count: 1, avg_execution_ms: 120 } },
+      daily_counts: Array.from({ length: 14 }, (_, index) => ({
+        date: `2026-09-${String(index + 14).padStart(2, '0')}`,
+        count: index === 13 ? 1 : 0,
+      })),
+      durations_ms: [100, 140],
+    };
+  };
+  const card = shell.mount(hass);
+  await waitFor(() => !card._loadingInProgress && card.automationStats.size === 1, 'server-summary base load');
+  await card._loadTraceStatistics();
+  const stats = card.automationStats.get('automation.server-summary');
+  assert.equal(card._traceStatsCapability.status, 'available');
+  assert.equal(stats.traceCount, 2);
+  assert.equal(stats.todayCount, 1);
+  assert.equal(stats.isFailed, true);
+  assert.equal(stats.avgExecutionTime, 120);
+  assert.deepEqual(toPlain(card.executionTimes), [100, 140]);
+  assert.deepEqual(hass.__calls.filter(call => call.payload.type === 'ha_automation_analyzer/summary').length, 1);
+  assert.equal(hass.__calls.some(call => call.payload.type === 'trace/list'), false);
+  assertPrivateCanariesAbsent(card._traceStatsCapability, 'server aggregate');
+  card.remove();
+});
+
 test('disconnect releases completed global trace summaries and their HA references', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());
