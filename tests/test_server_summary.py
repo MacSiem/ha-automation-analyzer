@@ -16,6 +16,18 @@ SPEC.loader.exec_module(summary)
 
 
 class SummaryTests(unittest.TestCase):
+    def test_live_core_datetime_timestamps_are_summarized(self) -> None:
+        rows = [{
+            "domain": "automation", "item_id": "test", "state": "stopped",
+            "timestamp": {
+                "start": datetime.fromisoformat("2026-09-27T10:00:00+02:00"),
+                "finish": datetime.fromisoformat("2026-09-27T10:00:01+02:00"),
+            },
+        }]
+        result = summary.summarize_traces(rows, datetime.fromisoformat("2026-09-27T11:00:00+02:00"), "Europe/Warsaw")
+        self.assertEqual(result["execution_count"], 1)
+        self.assertEqual(result["durations_ms"], [1000])
+
     def test_dst_fallback_counts_two_distinct_hours_in_one_local_day_and_redacts(self) -> None:
         rows = [
             {"domain": "automation", "item_id": "test", "run_id": "PRIVATE-RUN-ID", "trigger": "PRIVATE-TRIGGER", "state": "stopped", "script_execution": "finished", "timestamp": {"start": "2026-10-25T02:30:00+02:00", "finish": "2026-10-25T02:30:01+02:00"}},

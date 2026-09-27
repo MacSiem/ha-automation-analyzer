@@ -11,12 +11,15 @@ MAX_DURATION_MS = 300_000
 
 
 def _timestamp(value: Any) -> datetime:
-    if not isinstance(value, str):
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise ValueError("invalid_trace_timestamp") from error
+    else:
         raise ValueError("invalid_trace_timestamp")
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise ValueError("invalid_trace_timestamp") from error
     if parsed.tzinfo is None:
         raise ValueError("invalid_trace_timestamp")
     return parsed
