@@ -52,6 +52,10 @@ privacy-minimized trace summary:
 *The Overview tab: system health score, counts, and the searchable automation list.
 Dark mode follows your Home Assistant theme automatically.*
 
+![Overview on a narrow screen](docs/screenshots/card-overview-narrow.png)
+
+*The narrow layout uses the same synthetic automation fixture.*
+
 ## Installation
 
 For the currently published dashboard package:
