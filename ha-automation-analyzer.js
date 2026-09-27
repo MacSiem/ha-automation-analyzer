@@ -1281,17 +1281,10 @@ const _LOCAL_INTRO = {
   headline: 'Surface slow / failing / suspicious automations.',
   steps: ['Overview shows total + health score + top failing.', 'Performance tab ranks by avg runtime.', 'Optimization tab suggests improvements (loops, redundant triggers).']
 };
-const _LOCAL_DONATE_HTML = ''
-  + '<div class="donate-section" data-source="ha-automation-analyzer">'
-  + '  <div class="donate-text">'
-  + '    <h3>❤️ Support HA Tools Development</h3>'
-  + '    <p>If this tool makes your Home Assistant life easier, consider supporting the project. Every coffee motivates further development!</p>'
-  + '  </div>'
-  + '  <div class="donate-buttons">'
-  + '    <a class="donate-btn coffee" href="https://buymeacoffee.com/macsiem" target="_blank" rel="noopener noreferrer">☕ Buy Me a Coffee</a>'
-  + '    <a class="donate-btn paypal" href="https://www.paypal.com/donate/?hosted_button_id=Y967H4PLRBN8W" target="_blank" rel="noopener noreferrer">💳 PayPal</a>'
-  + '  </div>'
-  + '</div>';
+const _LOCAL_SUPPORT_KEY = 'ha-automation-analyzer-support-dismissed';
+const _LOCAL_DONATE_HTML = '<div class="donate-section" data-source="own-card" style="margin:8px 0;padding:8px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px"><span>❤️ Support HA Tools:</span><a href="https://buymeacoffee.com/macsiem" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a><button type="button" class="support-dismiss" aria-label="Dismiss support link" style="margin-left:auto">×</button></div>';
+function _localSupportDismissed() { try { return localStorage.getItem(_LOCAL_SUPPORT_KEY) === '1'; } catch (_) { return false; } }
+function _bindLocalSupportDismiss(root) { root.querySelector('.support-dismiss')?.addEventListener('click', () => { try { localStorage.setItem(_LOCAL_SUPPORT_KEY, '1'); } catch (_) {} root.querySelector('.donate-section[data-source="own-card"]')?.remove(); }); }
 function _localIntroDismissed() {
   try { return localStorage.getItem(_LOCAL_INTRO_KEY) === '1'; } catch(e) { return false; }
 }
@@ -1395,7 +1388,8 @@ class HAAutomationAnalyzer extends HTMLElement {
     this.config = {
       title: typeof safeConfig.title === 'string' ? safeConfig.title : "Automation Analyzer",
       show_disabled: typeof safeConfig.show_disabled === 'boolean' ? safeConfig.show_disabled : true,
-      auto_refresh: typeof safeConfig.auto_refresh === 'boolean' ? safeConfig.auto_refresh : true
+      auto_refresh: typeof safeConfig.auto_refresh === 'boolean' ? safeConfig.auto_refresh : true,
+      show_support: safeConfig.show_support !== false
     };
     if (!wasAutoRefreshEnabled && this.config.auto_refresh && this.isConnected && this._hass) {
       if (this._renderTimer) clearTimeout(this._renderTimer);
@@ -1408,6 +1402,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         this._loadAndRender();
       }
     }
+    if (this._hass) this.render();
   }
 
   set hass(hass) {
@@ -3758,10 +3753,11 @@ ${styles}
         </div>
         ${mainContent}
       </div>
-      ${_LOCAL_DONATE_HTML}
+      ${this._hass?.user?.is_admin && this.config?.show_support !== false && !_localSupportDismissed() ? _LOCAL_DONATE_HTML : ''}
     `;
 
     _bindLocalIntroDismiss(this.shadowRoot);
+    _bindLocalSupportDismiss(this.shadowRoot);
     this._setupEventListeners();
     this._setupPaginationListeners();
     if (!this._isLoading) {
