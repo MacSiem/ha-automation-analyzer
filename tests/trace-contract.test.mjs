@@ -1172,9 +1172,12 @@ test('a routine automation refresh keeps explicitly loaded trace statistics visi
   assert.equal(card._traceStatsCapability?.status, 'available');
   const retained = card._traceStatsCapability;
   const traceCalls = hass.__calls.filter(call => call.kind === 'callWS' && call.payload.type === 'trace/list').length;
+  const invalidations = [];
+  const invalidate = card._invalidateTraceStatistics.bind(card);
+  card._invalidateTraceStatistics = () => { invalidations.push(new Error().stack); invalidate(); };
 
   await card._loadAndRender();
-  assert.equal(card._traceStatsCapability, retained, 'routine refresh must retain the explicit trace result');
+  assert.equal(card._traceStatsCapability, retained, `routine refresh must retain the explicit trace result; invalidations: ${invalidations.join(' | ')}`);
   assert.notEqual(card._traceStatsBaseMetrics, null, 'trace metrics must be re-applied after base refresh');
   assert.equal(hass.__calls.filter(call => call.kind === 'callWS' && call.payload.type === 'trace/list').length,
     traceCalls, 'routine refresh must not fetch traces implicitly');
