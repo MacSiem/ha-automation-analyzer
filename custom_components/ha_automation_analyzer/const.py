@@ -2,7 +2,7 @@
 
 DOMAIN = "ha_automation_analyzer"
 NAME = "Automation Analyzer"
-VERSION = "5.0.0"
+VERSION = "5.0.1"
 
 CARD_FILENAME = "ha-automation-analyzer.js"
 CARD_ELEMENT = "ha-automation-analyzer"

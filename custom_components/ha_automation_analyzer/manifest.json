@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/MacSiem/ha-automation-analyzer/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "5.0.0"
+  "version": "5.0.1"
 }
