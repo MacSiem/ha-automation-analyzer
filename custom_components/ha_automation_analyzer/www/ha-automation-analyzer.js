@@ -1954,7 +1954,12 @@ class HAAutomationAnalyzer extends HTMLElement {
     try {
       this._fetchError = null;
       const automations = Object.entries(hass.states).filter(([id]) => id.startsWith("automation."));
-      this._invalidateTraceStatistics();
+      // A routine state/config refresh does not revoke an administrator's explicit
+      // trace request. Rebuild the base values, then reapply that retained result.
+      // Session, role and automation-set changes invalidate it in the hass setter.
+      const retainedTraceStatistics = this._traceStatsCapability;
+      const retainedTraceSignature = this._traceStatsSignature();
+      this._restoreTraceStatisticsBase();
       this.automationStats.clear();
       this.triggerTypes.clear();
       this.failedAutomations.clear();
@@ -2001,6 +2006,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       this._isLoading = false;
       this._lastUpdated = new Date();
       this._suppressTimelineAutoFetch = false;
+      this._applyTraceStatistics(retainedTraceStatistics);
       this.render();
 
       // --- Phase 2: Fetch automation configs (enriches trigger types) ---
@@ -2049,6 +2055,11 @@ class HAAutomationAnalyzer extends HTMLElement {
           });
         }
         a.configObj = configObj;
+      }
+      if (retainedTraceStatistics && retainedTraceSignature !== this._traceStatsSignature()) {
+        this._invalidateTraceStatistics();
+      } else {
+        this._applyTraceStatistics(retainedTraceStatistics);
       }
       // Re-render with enriched config data
       this.render();
