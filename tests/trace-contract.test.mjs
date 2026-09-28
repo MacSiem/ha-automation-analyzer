@@ -1158,6 +1158,29 @@ test('trace statistics load only after an explicit admin action and cache is sna
   card.remove();
 });
 
+test('a routine automation refresh keeps explicitly loaded trace statistics visible', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const trace = fixture('trace-v1.json');
+  trace.item_id = 'stats-retained';
+  trace.run_id = 'stats-retained-run';
+  const hass = createHassFixture({ label: 'stats-retained', traces: [trace] });
+  const card = shell.mount(hass);
+  await waitFor(() => !card._loadingInProgress && card.automationStats.size === 1, 'base automation load');
+  await card._loadTraceStatistics();
+  assert.equal(card._traceStatsCapability?.status, 'available');
+  const retained = card._traceStatsCapability;
+  const traceCalls = hass.__calls.filter(call => call.kind === 'callWS' && call.payload.type === 'trace/list').length;
+
+  await card._loadAndRender();
+  assert.equal(card._traceStatsCapability, retained, 'routine refresh must retain the explicit trace result');
+  assert.notEqual(card._traceStatsBaseMetrics, null, 'trace metrics must be re-applied after base refresh');
+  assert.equal(hass.__calls.filter(call => call.kind === 'callWS' && call.payload.type === 'trace/list').length,
+    traceCalls, 'routine refresh must not fetch traces implicitly');
+  card.remove();
+});
+
 test('trace statistics invalidate on same-object connection and automation-set changes', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());
