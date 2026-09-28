@@ -1958,7 +1958,6 @@ class HAAutomationAnalyzer extends HTMLElement {
       // trace request. Rebuild the base values, then reapply that retained result.
       // Session, role and automation-set changes invalidate it in the hass setter.
       const retainedTraceStatistics = this._traceStatsCapability;
-      const retainedTraceSignature = this._traceStatsSignature();
       this._restoreTraceStatisticsBase();
       this.automationStats.clear();
       this.triggerTypes.clear();
@@ -2056,11 +2055,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         }
         a.configObj = configObj;
       }
-      if (retainedTraceStatistics && retainedTraceSignature !== this._traceStatsSignature()) {
-        this._invalidateTraceStatistics();
-      } else {
-        this._applyTraceStatistics(retainedTraceStatistics);
-      }
+      this._applyTraceStatistics(retainedTraceStatistics);
       // Re-render with enriched config data
       this.render();
 
