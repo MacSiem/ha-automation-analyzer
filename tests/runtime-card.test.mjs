@@ -875,7 +875,8 @@ test('unavailable automations are reported, lower the score and are not queried 
   assert.ok(card._calculateHealthScore() <= 74, 'an unavailable automation must not score as Excellent');
   const banner = card.shadowRoot.querySelector('.unavailable-banner');
   assert.ok(banner, 'banner is rendered');
-  assert.match(banner.textContent, /1\s+automations are unavailable/);
+  assert.match(banner.textContent, /1\s+automations have an unavailable or unknown state/);
+  assert.match(banner.textContent, /State data does not identify the cause/);
   const toggle = card.shadowRoot.getElementById('aa-unavailable-toggle');
   assert.equal(toggle.getAttribute('aria-pressed'), 'false');
   toggle.click();
