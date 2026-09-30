@@ -143,3 +143,9 @@ The optional in-card support link is shown only to administrators. Dismiss it in
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+## Privacy and data
+
+The card reads automation states and explicitly requested trace summaries from Home Assistant. Trace details can reveal entity names and actions. Keep exports and debugging captures local; remove identifiers and action data before sharing a report.
+
+See [SECURITY.md](SECURITY.md) for safe vulnerability reporting and [NOTICE](NOTICE) for licensing notices.
