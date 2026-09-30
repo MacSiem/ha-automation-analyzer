@@ -1,5 +1,8 @@
 ## Unreleased — integration development branch
 
+- Initialize the standalone panel with the same title and disabled-automation defaults as a Lovelace card.
+- Report unknown or unavailable states without asserting an unsupported configuration failure.
+
 - Add an optional Home Assistant integration with an administrator panel and on-demand server-side retained-trace summary. The summary sends only bounded counts and durations to the browser.
 - Keep the existing standalone dashboard card and native trace path for current HACS users; the category change is pending.
 

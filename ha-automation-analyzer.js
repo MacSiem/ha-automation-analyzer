@@ -1380,6 +1380,8 @@ class HAAutomationAnalyzer extends HTMLElement {
     this._configCache = new Map();
     this._configCacheAt = 0;
     this._configAccess = 'unknown';
+    // panel_custom supplies hass directly, so initialize the same defaults as Lovelace.
+    this.setConfig({});
   }
 
   setConfig(config) {
@@ -1546,7 +1548,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         totalLabel: '\u0141\u0105cznie',
         active: 'Aktywnych',
         disabledLabel: 'Wy\u0142\u0105czonych',
-        unavailableBanner: 'automatyzacji jest niedostępnych — ich konfiguracja jest nieprawidłowa lub została usunięta, więc nie mogą się uruchomić. Sprawdź Ustawienia → Naprawy i log Home Assistanta.',
+        unavailableBanner: 'automatyzacji ma stan niedostępny lub nieznany. Same stany nie wskazują przyczyny. Sprawdź Ustawienia → Naprawy i log Home Assistanta.',
         showUnavailable: 'Pokaż niedostępne',
         showAllAutomations: 'Pokaż wszystkie',
         errorsLabel: 'B\u0142\u0119dy w trasach',
@@ -1676,7 +1678,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         totalLabel: 'Total',
         active: 'Active',
         disabledLabel: 'Disabled',
-        unavailableBanner: 'automations are unavailable — their configuration is invalid or was removed, so they cannot run. Check Settings → Repairs and the Home Assistant log.',
+        unavailableBanner: 'automations have an unavailable or unknown state. State data does not identify the cause. Check Settings → Repairs and the Home Assistant log.',
         showUnavailable: 'Show unavailable',
         showAllAutomations: 'Show all',
         errorsLabel: 'Trace errors',
@@ -1972,8 +1974,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         const name = this._sanitize(entity.attributes?.friendly_name || id.replace("automation.", ""));
         const isDisabled = entity.state === "off";
         if (isDisabled && !this.config.show_disabled) continue;
-        // Home Assistant keeps an unavailable automation entity when its configuration
-        // is invalid or was removed; it can never run, so it is a problem, not "unknown".
+        // State data identifies unavailability, but cannot diagnose its cause.
         const isUnavailable = entity.state === "unavailable" || entity.state === "unknown";
         if (isUnavailable) {
           this.unavailableAutomations.push({ id, name, automationId: entity.attributes?.id || id.replace("automation.", "") });
