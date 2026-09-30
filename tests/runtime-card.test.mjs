@@ -25,6 +25,35 @@ function componentLeaks(shell, card) {
   };
 }
 
+test('standalone panel receives declared defaults without Lovelace setConfig', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const card = shell.window.document.createElement('ha-automation-analyzer');
+  shell.window.document.body.append(card);
+  card.hass = createHassFixture({ label: 'standalone-panel' });
+  await waitForLoaded(card);
+  assert.equal(card.shadowRoot.querySelector('h1').textContent, 'Automation Analyzer');
+  assert.equal(card.config.show_disabled, true);
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
+test('unknown automation state does not diagnose a removed or invalid configuration', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'unknown-state' });
+  const entity = Object.values(hass.states).find(row => row.entity_id?.startsWith('automation.')) || Object.values(hass.states)[0];
+  entity.state = 'unknown';
+  const card = shell.mount(hass);
+  await waitForLoaded(card);
+  assert.doesNotMatch(card.shadowRoot.textContent, /configuration is invalid or was removed/);
+  assert.match(card.shadowRoot.textContent, /unavailable/);
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
 test('Sections grid metadata preserves the card natural dynamic height', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());
