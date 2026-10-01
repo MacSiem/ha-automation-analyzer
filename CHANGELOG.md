@@ -1,5 +1,7 @@
 ## Unreleased — integration development branch
 
+- Preserve keyboard focus on navigation tabs when switching views or refreshing data.
+
 - Initialize the standalone panel with the same title and disabled-automation defaults as a Lovelace card.
 - Report unknown or unavailable states without asserting an unsupported configuration failure.
 

@@ -2689,6 +2689,8 @@ class HAAutomationAnalyzer extends HTMLElement {
 
   render() {
     if (!this._hass || !this.isConnected) return;
+    const focusedTab = this.shadowRoot.activeElement?.matches('.tab-btn')
+      ? this.shadowRoot.activeElement.dataset.tab : null;
     const styles = `
       
 /* ===== BENTO DESIGN SYSTEM (local fallback) ===== */
@@ -3767,6 +3769,11 @@ ${styles}
     _bindLocalSupportDismiss(this.shadowRoot);
     this._setupEventListeners();
     this._setupPaginationListeners();
+    if (focusedTab) {
+      const replacement = Array.from(this.shadowRoot.querySelectorAll('.tab-btn'))
+        .find(button => button.dataset.tab === focusedTab);
+      replacement?.focus({ preventScroll: true });
+    }
     if (!this._isLoading) {
       this._drawCharts();
     }
