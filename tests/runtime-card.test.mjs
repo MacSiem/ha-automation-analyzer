@@ -888,3 +888,27 @@ test('unavailable automations are reported, lower the score and are not queried 
   assert.deepEqual(componentLeaks(shell, card), { listeners: [], observers: [] });
   assert.deepEqual(shell.errors, []);
 });
+
+
+test('tab navigation retains keyboard focus through click and refresh renders', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const card = shell.mount(createHassFixture({ label: 'keyboard-tab-focus' }));
+  await waitForLoaded(card);
+
+  const performance = card.shadowRoot.querySelector('.tab-btn[data-tab="performance"]');
+  performance.focus();
+  performance.click();
+  assert.equal(card.currentTab, 'performance');
+  assert.equal(card.shadowRoot.activeElement?.dataset.tab, 'performance',
+    'activating a tab must leave focus on its replacement button');
+
+  await card._loadAndRender();
+  await waitForLoaded(card);
+  assert.equal(card.shadowRoot.activeElement?.dataset.tab, 'performance',
+    'an automatic data refresh must preserve the focused tab');
+
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
