@@ -68,9 +68,15 @@ The integration package is prepared on the development branch. For a manual
 development installation, copy `custom_components/ha_automation_analyzer` into
 `<config>/custom_components/`, restart Home Assistant, and add **Automation Analyzer**
 under Settings → Devices & services. It serves the same card and registers a
-sidebar panel for administrators. Remove a separate Dashboard installation when
-switching packages to avoid loading two versions of the card. HACS integration
-installation will require the repository category change to be accepted first.
+sidebar panel for administrators. HACS integration installation requires a
+published integration package and an accepted category change.
+
+Keep your working Dashboard plugin, its resources, and existing card configuration
+while trying the integration. In storage mode the integration reuses the existing
+card resource. Check that your dashboards still work and the integration is loaded
+before retiring the plugin. The public plugin remains available until the
+integration release and migration have been verified. A category change alone
+is not a verified migration.
 
 ## Quick start
 
