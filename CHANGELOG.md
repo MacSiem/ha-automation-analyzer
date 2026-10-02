@@ -1,5 +1,7 @@
 ## Unreleased — integration development branch
 
+- Follow the selected Polish or English language in first-run guidance and optional support controls.
+
 - Preserve keyboard focus on navigation tabs when switching views or refreshing data.
 
 - Initialize the standalone panel with the same title and disabled-automation defaults as a Lovelace card.

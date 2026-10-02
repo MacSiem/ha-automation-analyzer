@@ -1281,19 +1281,28 @@ const _LOCAL_INTRO = {
   headline: 'Surface slow / failing / suspicious automations.',
   steps: ['Overview shows total + health score + top failing.', 'Performance tab ranks by avg runtime.', 'Optimization tab suggests improvements (loops, redundant triggers).']
 };
+const _LOCAL_INTRO_PL = {
+  headline: 'Sprawdź wolne automatyzacje i błędy.',
+  steps: ['Przegląd pokazuje liczbę automatyzacji, ocenę i najczęstsze błędy.', 'Wydajność porządkuje automatyzacje według średniego czasu wykonania.', 'Optymalizacja wskazuje możliwe usprawnienia, w tym pętle i zbędne wyzwalacze.']
+};
 const _LOCAL_SUPPORT_KEY = 'ha-automation-analyzer-support-dismissed';
 const _LOCAL_DONATE_HTML = '<div class="donate-section" data-source="own-card" style="margin:8px 0 0;padding:4px 0;background:none;border:0;box-shadow:none;min-height:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-direction:row;justify-content:flex-start;text-align:left"><a href="https://buymeacoffee.com/macsiem" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--secondary-text-color,#64748b);font-weight:400;text-decoration:underline">Optional support for HA Tools</a><button type="button" class="support-dismiss" aria-label="Dismiss support link" style="margin-left:auto;padding:2px 6px;min-height:0;line-height:1;border:0;background:none;color:var(--secondary-text-color,#64748b);cursor:pointer">×</button></div>';
+function _renderLocalSupport(lang = 'en') {
+  return lang === 'pl' ? _LOCAL_DONATE_HTML.replace('Optional support for HA Tools', 'Opcjonalne wsparcie HA Tools').replace('Dismiss support link', 'Ukryj odnośnik wsparcia') : _LOCAL_DONATE_HTML;
+}
 function _localSupportDismissed() { try { return localStorage.getItem(_LOCAL_SUPPORT_KEY) === '1'; } catch (_) { return false; } }
 function _bindLocalSupportDismiss(root) { root.querySelector('.support-dismiss')?.addEventListener('click', () => { try { localStorage.setItem(_LOCAL_SUPPORT_KEY, '1'); } catch (_) {} root.querySelector('.donate-section[data-source="own-card"]')?.remove(); }); }
 function _localIntroDismissed() {
   try { return localStorage.getItem(_LOCAL_INTRO_KEY) === '1'; } catch(e) { return false; }
 }
-function _renderLocalIntro() {
+function _renderLocalIntro(lang = 'en') {
   if (_localIntroDismissed()) return '';
-  const steps = _LOCAL_INTRO.steps.map(step => '<li>' + _esc(step) + '</li>').join('');
+  const intro = lang === 'pl' ? _LOCAL_INTRO_PL : _LOCAL_INTRO;
+  const dismiss = lang === 'pl' ? 'Ukryj wskazówki' : 'Dismiss';
+  const steps = intro.steps.map(step => '<li>' + _esc(step) + '</li>').join('');
   return '<div class="intro-banner" data-intro="ha-automation-analyzer">'
-    + '<button class="intro-dismiss" type="button" title="Dismiss" aria-label="Dismiss">✕</button>'
-    + '<div class="intro-headline">💡 ' + _esc(_LOCAL_INTRO.headline) + '</div>'
+    + '<button class="intro-dismiss" type="button" title="' + dismiss + '" aria-label="' + dismiss + '">✕</button>'
+    + '<div class="intro-headline">💡 ' + _esc(intro.headline) + '</div>'
     + '<ol class="intro-steps">' + steps + '</ol>'
     + '</div>';
 }
@@ -3730,7 +3739,7 @@ ${styles}
         }
 
 </style>
-      ${_renderLocalIntro()}
+      ${_renderLocalIntro(this._lang)}
       <div class="card">
         ${this._fetchError ? `<div style="margin-bottom:12px;padding:10px 14px;background:var(--bento-error-light,rgba(239,68,68,0.08));color:var(--bento-error,#EF4444);border:1px solid var(--bento-error-border,rgba(239,68,68,0.25));border-radius:var(--bento-radius-sm,10px);font-size:13px;font-weight:500">⚠ ${_esc(this._fetchError)}</div>` : ''}
         <div class="header">
@@ -3762,7 +3771,7 @@ ${styles}
         </div>
         ${mainContent}
       </div>
-      ${this._hass?.user?.is_admin && this.config?.show_support !== false && !_localSupportDismissed() ? _LOCAL_DONATE_HTML : ''}
+      ${this._hass?.user?.is_admin && this.config?.show_support !== false && !_localSupportDismissed() ? _renderLocalSupport(this._lang) : ''}
     `;
 
     _bindLocalIntroDismiss(this.shadowRoot);
