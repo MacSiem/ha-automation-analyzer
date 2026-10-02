@@ -25,6 +25,29 @@ function componentLeaks(shell, card) {
   };
 }
 
+test('Polish first-run guidance and support controls follow the card language', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'polish-first-run' });
+  hass.language = 'pl';
+  const card = shell.mount(hass);
+  await waitForLoaded(card);
+  assert.match(card.shadowRoot.querySelector('.intro-headline').textContent, /Sprawdź wolne automatyzacje i błędy/);
+  assert.match(card.shadowRoot.querySelector('.intro-steps').textContent, /Przegląd/);
+  assert.equal(card.shadowRoot.querySelector('.intro-dismiss').getAttribute('aria-label'), 'Ukryj wskazówki');
+  assert.equal(card.shadowRoot.querySelector('.donate-section a').textContent, 'Opcjonalne wsparcie HA Tools');
+  assert.equal(card.shadowRoot.querySelector('.support-dismiss').getAttribute('aria-label'), 'Ukryj odnośnik wsparcia');
+  card._lang = 'en';
+  card.render();
+  assert.match(card.shadowRoot.querySelector('.intro-headline').textContent, /Surface slow/);
+  assert.equal(card.shadowRoot.querySelector('.intro-dismiss').getAttribute('aria-label'), 'Dismiss');
+  assert.equal(card.shadowRoot.querySelector('.donate-section a').textContent, 'Optional support for HA Tools');
+  assert.equal(card.shadowRoot.querySelector('.support-dismiss').getAttribute('aria-label'), 'Dismiss support link');
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
 test('standalone panel receives declared defaults without Lovelace setConfig', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());
