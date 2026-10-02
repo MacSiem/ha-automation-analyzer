@@ -2,7 +2,7 @@
   "schema_version": 2,
   "source": {
     "path": "ha-automation-analyzer.js",
-    "sha256": "05d3070b72025a52e3b0aa44013b24da4075876cc086595f12d50cf31b243bc4"
+    "sha256": "6d6762ba34663273ddf89b098781e6c079ba214b2d434939cc98624216ea8b90"
   },
   "fixture": {
     "seed": "aa-demo-v1",
@@ -13,7 +13,8 @@
   "renderer": {
     "name": "Google Chrome",
     "version": "154.0.8037.93",
-    "executable_sha256": "b4a14b08946ab78756169696fd272d6c3040a22df52da4f83f665225685f4c10"
+    "executable_sha256": "b4a14b08946ab78756169696fd272d6c3040a22df52da4f83f665225685f4c10",
+    "source_rebind_proof": "source-rebind.json"
   },
   "captures": [
     {
@@ -22,7 +23,7 @@
       "viewport": "desktop",
       "pixel_width": 480,
       "pixel_height": 1117,
-      "source_sha256": "05d3070b72025a52e3b0aa44013b24da4075876cc086595f12d50cf31b243bc4",
+      "source_sha256": "6d6762ba34663273ddf89b098781e6c079ba214b2d434939cc98624216ea8b90",
       "image_sha256": "224b48b5b12093ed8da5562ae4ea4b12a1e25f32a0dbe57696e558c9ba6f34d8",
       "render_sha256_samples": [
         "224b48b5b12093ed8da5562ae4ea4b12a1e25f32a0dbe57696e558c9ba6f34d8",
@@ -37,7 +38,9 @@
         "locale": "en-US",
         "timezone": "UTC",
         "loading": false
-      }
+      },
+      "captured_source_sha256": "05d3070b72025a52e3b0aa44013b24da4075876cc086595f12d50cf31b243bc4",
+      "source_binding": "Verified unchanged English fixture DOM/CSS; retained pixel capture, not a new render"
     },
     {
       "file": "card-overview-dark.png",
@@ -45,7 +48,7 @@
       "viewport": "desktop",
       "pixel_width": 480,
       "pixel_height": 1117,
-      "source_sha256": "05d3070b72025a52e3b0aa44013b24da4075876cc086595f12d50cf31b243bc4",
+      "source_sha256": "6d6762ba34663273ddf89b098781e6c079ba214b2d434939cc98624216ea8b90",
       "image_sha256": "1388211959ebd946eb1c77ba0f2b963cf2cad1c9e012e5b46a18c197a3203925",
       "render_sha256_samples": [
         "1388211959ebd946eb1c77ba0f2b963cf2cad1c9e012e5b46a18c197a3203925",
@@ -60,7 +63,9 @@
         "locale": "en-US",
         "timezone": "UTC",
         "loading": false
-      }
+      },
+      "captured_source_sha256": "05d3070b72025a52e3b0aa44013b24da4075876cc086595f12d50cf31b243bc4",
+      "source_binding": "Verified unchanged English fixture DOM/CSS; retained pixel capture, not a new render"
     },
     {
       "file": "card-overview-narrow.png",
@@ -68,7 +73,7 @@
       "viewport": "narrow",
       "pixel_width": 360,
       "pixel_height": 1232,
-      "source_sha256": "05d3070b72025a52e3b0aa44013b24da4075876cc086595f12d50cf31b243bc4",
+      "source_sha256": "6d6762ba34663273ddf89b098781e6c079ba214b2d434939cc98624216ea8b90",
       "image_sha256": "03309dd20ff97dc87609ebe320e40721a2b9444db4445ba65e0bc3292a11d5df",
       "render_sha256_samples": [
         "03309dd20ff97dc87609ebe320e40721a2b9444db4445ba65e0bc3292a11d5df",
@@ -83,7 +88,9 @@
         "locale": "en-US",
         "timezone": "UTC",
         "loading": false
-      }
+      },
+      "captured_source_sha256": "05d3070b72025a52e3b0aa44013b24da4075876cc086595f12d50cf31b243bc4",
+      "source_binding": "Verified unchanged English fixture DOM/CSS; retained pixel capture, not a new render"
     }
   ]
 }
