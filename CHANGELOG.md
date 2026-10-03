@@ -1,3 +1,7 @@
+## Unreleased
+
+- Refresh existing translated UI on ordinary Home Assistant language changes, including when auto-refresh is disabled. Preserve the focused search draft and complete selection range/direction without additional data or trace reads.
+
 ## Unreleased — integration development branch
 
 - Follow the selected Polish or English language in first-run guidance and optional support controls.

@@ -1429,7 +1429,9 @@ class HAAutomationAnalyzer extends HTMLElement {
       this.classList.toggle('bento-dark', _d);
     } catch (e) {}
 
+    const previousLanguage = this._lang;
     if (hass?.language) this._lang = hass.language.startsWith('pl') ? 'pl' : 'en';
+    const languageChanged = previousLanguage !== this._lang;
     const previousHass = this._hass;
     const hassChanged = previousHass !== hass;
     const nextConnection = hass?.connection || null;
@@ -1473,7 +1475,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       timelineInvalidated = true;
     }
     if (!hass || !this.isConnected) return;
-    if (timelineInvalidated || traceSnapshotChanged) this.render();
+    if (timelineInvalidated || traceSnapshotChanged || languageChanged) this._rerenderContent();
     if (hassChanged && traceSnapshotChanged && this._loadingInProgress) {
       this._activeLoadToken = null;
       this._pendingLoad = true;
@@ -3990,13 +3992,14 @@ ${styles}
   _rerenderContent() {
     // Re-render without losing focus on filter input
     const hadFocus = this.shadowRoot.activeElement?.id === "aa-filter-input";
-    const cursorPos = hadFocus ? this.shadowRoot.getElementById("aa-filter-input")?.selectionStart : null;
+    const previousInput = hadFocus ? this.shadowRoot.getElementById("aa-filter-input") : null;
+    const selection = previousInput ? [previousInput.selectionStart, previousInput.selectionEnd, previousInput.selectionDirection] : null;
     this.render();
     if (hadFocus) {
       const input = this.shadowRoot.getElementById("aa-filter-input");
       if (input) {
-        input.focus();
-        if (cursorPos !== null) input.setSelectionRange(cursorPos, cursorPos);
+        input.focus({ preventScroll: true });
+        if (selection) input.setSelectionRange(...selection);
       }
     }
   }
