@@ -150,6 +150,26 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms));
       const localIntroTags = new Set(['ha-automation-analyzer', 'ha-config-auditor', 'ha-data-exporter', 'ha-device-health', 'ha-entity-renamer']);
       const localDonateTags = new Set([...localIntroTags, 'ha-purge-cache']);
       if (!problem && localDonateTags.has(t.tag) && el.shadowRoot.querySelectorAll('.donate-section').length !== 1) problem = 'local support footer missing or duplicated';
+      if (!problem && localDonateTags.has(t.tag)) {
+        const dismissSupport = el.shadowRoot.querySelector('.donate-section[data-source="own-card"] .support-dismiss');
+        if (!dismissSupport) problem = 'admin support dismiss button missing';
+        else {
+          dismissSupport.click();
+          if (el.shadowRoot.querySelector('.donate-section[data-source="own-card"]')) problem = 'dismissed support remained visible';
+          else if (window.localStorage.getItem(t.tag + '-support-dismissed') !== '1') problem = 'support dismissal was not persisted';
+          window.localStorage.removeItem(t.tag + '-support-dismissed');
+        }
+        for (const mode of ['optout', 'guest']) {
+          if (problem) break;
+          const card = window.document.createElement(t.tag);
+          card.setConfig({ type: 'custom:' + t.tag, show_support: mode === 'optout' ? false : true });
+          const scopedHass = mockHass(); scopedHass.user.is_admin = mode !== 'guest';
+          card.hass = scopedHass; window.document.body.appendChild(card); card.hass = scopedHass;
+          await delay(100);
+          if (card.shadowRoot.querySelector('.donate-section')) problem = mode + ' saw the support link';
+          card.remove();
+        }
+      }
       if (!problem && localIntroTags.has(t.tag)) {
         const intro = el.shadowRoot.querySelector('.intro-banner[data-intro="' + t.tag + '"]');
         const dismiss = intro && intro.querySelector('.intro-dismiss');

@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - 'codex/**'
   pull_request:
     branches:
       - main
@@ -15,10 +16,14 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        category: [plugin, integration]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: HACS Action
         uses: hacs/action@main
         with:
-          category: plugin
+          category: ${{ matrix.category }}

@@ -1,0 +1,4 @@
+{
+  "config": {"step": {"user": {"title": "Automation Analyzer", "description": "Add the read-only Automation Analyzer panel and dashboard card."}}},
+  "options": {"step": {"init": {"title": "Automation Analyzer options", "data": {"show_panel": "Show sidebar panel"}}}}
+}

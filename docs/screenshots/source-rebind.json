@@ -1,0 +1,27 @@
+{
+  "old_head": "6b18803f4d8dd8cb826d1fff748990f0bcc05c04",
+  "current_head": "545cfd5050fe27bbc1e6751ac20719b3514837b4",
+  "old_source_sha256": "05d3070b72025a52e3b0aa44013b24da4075876cc086595f12d50cf31b243bc4",
+  "current_source_sha256": "6d6762ba34663273ddf89b098781e6c079ba214b2d434939cc98624216ea8b90",
+  "scope": "English screenshot fixture hides intro/support; exact rendered shadow DOM and CSS identity only. Existing pixel captures retained through verified lineage; no new native rendering or Polish guidance acceptance.",
+  "results": [
+    {
+      "theme": "light",
+      "viewport": "desktop",
+      "identical": true,
+      "render_dom_css_sha256": "fb25c87fdbc2a62df3630eb22cd4a9fa274545041f15a3eede867b25a1c5acdd"
+    },
+    {
+      "theme": "dark",
+      "viewport": "desktop",
+      "identical": true,
+      "render_dom_css_sha256": "b874763bc895acfd2042b3a1aeb0c327a74e74f78e5663eb345195586f4e3484"
+    },
+    {
+      "theme": "light",
+      "viewport": "narrow",
+      "identical": true,
+      "render_dom_css_sha256": "c056a8e6091099bc84c94311805c7f7037b5092e8c2140ac8a73d583a522e7ca"
+    }
+  ]
+}

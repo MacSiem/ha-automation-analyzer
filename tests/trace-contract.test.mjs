@@ -813,6 +813,44 @@ test('explicit normalized trace statistics drive retained counts, timings, and f
   card.remove();
 });
 
+test('integration summary supplies statistics without fetching global raw traces', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'server-summary' });
+  hass.config.components = ['ha_automation_analyzer'];
+  const nativeCallWS = hass.callWS.bind(hass);
+  hass.callWS = async message => {
+    if (message.type !== 'ha_automation_analyzer/summary') return nativeCallWS(message);
+    hass.__calls.push({ kind: 'callWS', payload: message, label: 'server-summary' });
+    return {
+      schema: 'aa-trace-summary-v1',
+      run_count: 2,
+      execution_count: 2,
+      by_automation: { 'server-summary': { trace_count: 2, today_count: 1, error_count: 1, avg_execution_ms: 120 } },
+      daily_counts: Array.from({ length: 14 }, (_, index) => ({
+        date: `2026-09-${String(index + 14).padStart(2, '0')}`,
+        count: index === 13 ? 1 : 0,
+      })),
+      durations_ms: [100, 140],
+    };
+  };
+  const card = shell.mount(hass);
+  await waitFor(() => !card._loadingInProgress && card.automationStats.size === 1, 'server-summary base load');
+  await card._loadTraceStatistics();
+  const stats = card.automationStats.get('automation.server-summary');
+  assert.equal(card._traceStatsCapability.status, 'available');
+  assert.equal(stats.traceCount, 2);
+  assert.equal(stats.todayCount, 1);
+  assert.equal(stats.isFailed, true);
+  assert.equal(stats.avgExecutionTime, 120);
+  assert.deepEqual(toPlain(card.executionTimes), [100, 140]);
+  assert.deepEqual(hass.__calls.filter(call => call.payload.type === 'ha_automation_analyzer/summary').length, 1);
+  assert.equal(hass.__calls.some(call => call.payload.type === 'trace/list'), false);
+  assertPrivateCanariesAbsent(card._traceStatsCapability, 'server aggregate');
+  card.remove();
+});
+
 test('disconnect releases completed global trace summaries and their HA references', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());
@@ -1117,6 +1155,29 @@ test('trace statistics load only after an explicit admin action and cache is sna
   await waitFor(() => !card._loadingInProgress && card.automationStats.has('automation.stats-replacement'), 'replacement stats snapshot');
   assert.equal(card._traceStatsCapability, null);
   assert.equal(replacement.__calls.some(call => call.kind === 'callWS' && call.payload.type === 'trace/list'), false);
+  card.remove();
+});
+
+test('a routine automation refresh keeps explicitly loaded trace statistics visible', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const trace = fixture('trace-v1.json');
+  trace.item_id = 'stats-retained';
+  trace.run_id = 'stats-retained-run';
+  const hass = createHassFixture({ label: 'stats-retained', traces: [trace] });
+  const card = shell.mount(hass);
+  await waitFor(() => !card._loadingInProgress && card.automationStats.size === 1, 'base automation load');
+  await card._loadTraceStatistics();
+  assert.equal(card._traceStatsCapability?.status, 'available');
+  const retained = card._traceStatsCapability;
+  const traceCalls = hass.__calls.filter(call => call.kind === 'callWS' && call.payload.type === 'trace/list').length;
+
+  await card._loadAndRender();
+  assert.equal(card._traceStatsCapability, retained, 'routine refresh must retain the explicit trace result');
+  assert.notEqual(card._traceStatsBaseMetrics, null, 'trace metrics must be re-applied after base refresh');
+  assert.equal(hass.__calls.filter(call => call.kind === 'callWS' && call.payload.type === 'trace/list').length,
+    traceCalls, 'routine refresh must not fetch traces implicitly');
   card.remove();
 });
 

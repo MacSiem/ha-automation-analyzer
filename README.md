@@ -10,8 +10,9 @@ every `automation.*` entity in your instance.
 
 ## How it works
 
-**Short version: it works automatically.** The card needs no configuration and no
-extra integration:
+**Short version: it works automatically.** The dashboard card needs no configuration.
+The optional integration adds an administrator sidebar panel and a server-side,
+privacy-minimized trace summary:
 
 1. **Instant overview from HA state.** On load, the card reads every `automation.*`
    entity (state, `last_triggered`) and immediately renders a system health score,
@@ -23,7 +24,10 @@ extra integration:
    It does not fetch state history or traces from Overview or in the background.
 3. **Traces only where requested.** Opening Timeline loads the selected automation's
    trace list and one selected run. An administrator can explicitly load one global
-   trace-summary snapshot from Performance or Optimization. Home Assistant exposes
+   trace-summary snapshot from Performance or Optimization. With the integration,
+   Home Assistant computes counts and durations on the server without sending a
+   global raw trace list to the browser. The standalone card uses the native
+   `trace/list` endpoint. Home Assistant exposes
    `trace/list` and `trace/get` to administrators only; non-admin users see an honest
    capability message and the card makes no trace request.
 4. **Trace limits apply.** Home Assistant keeps only the last 5 traces per automation
@@ -48,12 +52,31 @@ extra integration:
 *The Overview tab: system health score, counts, and the searchable automation list.
 Dark mode follows your Home Assistant theme automatically.*
 
+![Overview on a narrow screen](docs/screenshots/card-overview-narrow.png)
+
+*The narrow layout uses the same synthetic automation fixture.*
+
 ## Installation
 
+For the currently published dashboard package:
+
 1. Open HACS → Custom repositories.
-2. Add `https://github.com/MacSiem/ha-automation-analyzer` as category **Dashboard**
-   (Lovelace plugin).
+2. Add `https://github.com/MacSiem/ha-automation-analyzer` as category **Dashboard**.
 3. Install **HA Automation Analyzer** and reload your browser.
+
+The integration package is prepared on the development branch. For a manual
+development installation, copy `custom_components/ha_automation_analyzer` into
+`<config>/custom_components/`, restart Home Assistant, and add **Automation Analyzer**
+under Settings → Devices & services. It serves the same card and registers a
+sidebar panel for administrators. HACS integration installation requires a
+published integration package and an accepted category change.
+
+Keep your working Dashboard plugin, its resources, and existing card configuration
+while trying the integration. In storage mode the integration reuses the existing
+card resource. Check that your dashboards still work and the integration is loaded
+before retiring the plugin. The public plugin remains available until the
+integration release and migration have been verified. A category change alone
+is not a verified migration.
 
 ## Quick start
 
@@ -106,8 +129,9 @@ local sequential aliases. The file is created locally in the browser and is not
 uploaded.
 
 **Does this send data anywhere?**
-No telemetry and no external runtime requests — all analysis runs locally in your
-browser against your Home Assistant instance. If Chart.js is not already available
+No telemetry and no external runtime requests — analysis runs inside your Home
+Assistant instance. The integration summarizes retained traces on the server;
+the standalone card reads them through Home Assistant's WebSocket API. If Chart.js is not already available
 in the Home Assistant frontend, the card shows a compact numerical fallback instead
 of downloading a library from a CDN.
 
@@ -120,6 +144,14 @@ See [CHANGELOG.md](CHANGELOG.md).
 - [Buy Me a Coffee](https://buymeacoffee.com/macsiem)
 - [PayPal](https://www.paypal.com/donate/?hosted_button_id=Y967H4PLRBN8W)
 
+The optional in-card support link is shown only to administrators. Dismiss it in the card or set `show_support: false` in the card configuration.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+## Privacy and data
+
+The card reads automation states and explicitly requested trace summaries from Home Assistant. Trace details can reveal entity names and actions. Keep exports and debugging captures local; remove identifiers and action data before sharing a report.
+
+See [SECURITY.md](SECURITY.md) for safe vulnerability reporting and [NOTICE](NOTICE) for licensing notices.

@@ -1,3 +1,19 @@
+## Unreleased
+
+- Refresh existing translated UI on ordinary Home Assistant language changes, including when auto-refresh is disabled. Preserve the focused search draft and complete selection range/direction without additional data or trace reads.
+
+## Unreleased — integration development branch
+
+- Follow the selected Polish or English language in first-run guidance and optional support controls.
+
+- Preserve keyboard focus on navigation tabs when switching views or refreshing data.
+
+- Initialize the standalone panel with the same title and disabled-automation defaults as a Lovelace card.
+- Report unknown or unavailable states without asserting an unsupported configuration failure.
+
+- Add an optional Home Assistant integration with an administrator panel and on-demand server-side retained-trace summary. The summary sends only bounded counts and durations to the browser.
+- Keep the existing standalone dashboard card and native trace path for current HACS users; the category change is pending.
+
 ## 4.2.2 (2026-09-24)
 
 - Automations whose entity is `unavailable` (invalid or removed configuration, so they can never run) are now reported: a banner shows how many there are, a toggle lists only them, and any unavailable automation keeps the health score below "Excellent". Previously such a system could score 98 "Excellent".

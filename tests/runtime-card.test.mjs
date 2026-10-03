@@ -25,6 +25,58 @@ function componentLeaks(shell, card) {
   };
 }
 
+test('Polish first-run guidance and support controls follow the card language', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'polish-first-run' });
+  hass.language = 'pl';
+  const card = shell.mount(hass);
+  await waitForLoaded(card);
+  assert.match(card.shadowRoot.querySelector('.intro-headline').textContent, /Sprawdź wolne automatyzacje i błędy/);
+  assert.match(card.shadowRoot.querySelector('.intro-steps').textContent, /Przegląd/);
+  assert.equal(card.shadowRoot.querySelector('.intro-dismiss').getAttribute('aria-label'), 'Ukryj wskazówki');
+  assert.equal(card.shadowRoot.querySelector('.donate-section a').textContent, 'Opcjonalne wsparcie HA Tools');
+  assert.equal(card.shadowRoot.querySelector('.support-dismiss').getAttribute('aria-label'), 'Ukryj odnośnik wsparcia');
+  card._lang = 'en';
+  card.render();
+  assert.match(card.shadowRoot.querySelector('.intro-headline').textContent, /Surface slow/);
+  assert.equal(card.shadowRoot.querySelector('.intro-dismiss').getAttribute('aria-label'), 'Dismiss');
+  assert.equal(card.shadowRoot.querySelector('.donate-section a').textContent, 'Optional support for HA Tools');
+  assert.equal(card.shadowRoot.querySelector('.support-dismiss').getAttribute('aria-label'), 'Dismiss support link');
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
+test('standalone panel receives declared defaults without Lovelace setConfig', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const card = shell.window.document.createElement('ha-automation-analyzer');
+  shell.window.document.body.append(card);
+  card.hass = createHassFixture({ label: 'standalone-panel' });
+  await waitForLoaded(card);
+  assert.equal(card.shadowRoot.querySelector('h1').textContent, 'Automation Analyzer');
+  assert.equal(card.config.show_disabled, true);
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
+test('unknown automation state does not diagnose a removed or invalid configuration', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'unknown-state' });
+  const entity = Object.values(hass.states).find(row => row.entity_id?.startsWith('automation.')) || Object.values(hass.states)[0];
+  entity.state = 'unknown';
+  const card = shell.mount(hass);
+  await waitForLoaded(card);
+  assert.doesNotMatch(card.shadowRoot.textContent, /configuration is invalid or was removed/);
+  assert.match(card.shadowRoot.textContent, /unavailable/);
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
 test('Sections grid metadata preserves the card natural dynamic height', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());
@@ -846,7 +898,8 @@ test('unavailable automations are reported, lower the score and are not queried 
   assert.ok(card._calculateHealthScore() <= 74, 'an unavailable automation must not score as Excellent');
   const banner = card.shadowRoot.querySelector('.unavailable-banner');
   assert.ok(banner, 'banner is rendered');
-  assert.match(banner.textContent, /1\s+automations are unavailable/);
+  assert.match(banner.textContent, /1\s+automations have an unavailable or unknown state/);
+  assert.match(banner.textContent, /State data does not identify the cause/);
   const toggle = card.shadowRoot.getElementById('aa-unavailable-toggle');
   assert.equal(toggle.getAttribute('aria-pressed'), 'false');
   toggle.click();
@@ -857,4 +910,50 @@ test('unavailable automations are reported, lower the score and are not queried 
   card.remove();
   assert.deepEqual(componentLeaks(shell, card), { listeners: [], observers: [] });
   assert.deepEqual(shell.errors, []);
+});
+
+
+test('tab navigation retains keyboard focus through click and refresh renders', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const card = shell.mount(createHassFixture({ label: 'keyboard-tab-focus' }));
+  await waitForLoaded(card);
+
+  const performance = card.shadowRoot.querySelector('.tab-btn[data-tab="performance"]');
+  performance.focus();
+  performance.click();
+  assert.equal(card.currentTab, 'performance');
+  assert.equal(card.shadowRoot.activeElement?.dataset.tab, 'performance',
+    'activating a tab must leave focus on its replacement button');
+
+  await card._loadAndRender();
+  await waitForLoaded(card);
+  assert.equal(card.shadowRoot.activeElement?.dataset.tab, 'performance',
+    'an automatic data refresh must preserve the focused tab');
+
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
+for (const autoRefresh of [false, true]) {
+  test(`ordinary hass locale refresh preserves search selection with auto_refresh=${autoRefresh}`, { concurrency: false }, async t => {
+    const shell=createShell();t.after(()=>shell.dispose());shell.startCase();
+    const hass=createHassFixture({label:'locale-search',friendlyName:'QA locale automation'});
+    const card=shell.mount(hass,{auto_refresh:autoRefresh,show_support:false});await waitForLoaded(card);
+    const input=card.shadowRoot.querySelector('#aa-filter-input');assert.ok(input);
+    input.focus();input.value='QA locale';input.dispatchEvent(new shell.window.Event('input',{bubbles:true}));
+    const focused=card.shadowRoot.querySelector('#aa-filter-input');focused.setSelectionRange(1,7,'backward');
+    const before=hass.__calls.length;const generation=card._sessionGeneration;const cache=card._configCache;
+    card.hass={...hass,language:'pl'};
+    const pl=card.shadowRoot.querySelector('#aa-filter-input');assert.equal(pl.placeholder,'Szukaj automatyzacji…');assert.equal(pl.value,'QA locale');assert.equal(card.shadowRoot.activeElement,pl);assert.deepEqual([pl.selectionStart,pl.selectionEnd,pl.selectionDirection],[1,7,'backward']);
+    assert.equal(hass.__calls.length,before);assert.equal(card._sessionGeneration,generation);assert.equal(card._configCache,cache);
+    card.hass={...hass,language:'en'};const en=card.shadowRoot.querySelector('#aa-filter-input');assert.equal(en.placeholder,'Search automations…');assert.equal(en.value,'QA locale');assert.equal(card.shadowRoot.activeElement,en);assert.deepEqual([en.selectionStart,en.selectionEnd,en.selectionDirection],[1,7,'backward']);assert.equal(hass.__calls.length,before);card.remove();shell.assertForeignUnchanged();assert.deepEqual(shell.errors,[]);
+  });
+}
+test('ordinary locale refresh updates first-run and nonadmin trace notice independently', {concurrency:false}, async t=>{
+ const shell=createShell();t.after(()=>shell.dispose());shell.startCase();const adminHass=createHassFixture({label:'locale-admin'}),guestHass=createHassFixture({label:'locale-guest'});guestHass.user={id:'qa-guest',is_admin:false};guestHass.language='pl';
+ const admin=shell.mount(adminHass,{auto_refresh:false,show_support:false}),guest=shell.mount(guestHass,{auto_refresh:false,show_support:false});await waitForLoaded(admin);await waitForLoaded(guest);
+ const a=adminHass.__calls.length,b=guestHass.__calls.length;admin.hass={...adminHass,language:'pl'};assert.match(admin.shadowRoot.querySelector('.intro-headline').textContent,/Sprawdź/);assert.match(guest.shadowRoot.querySelector('.intro-headline').textContent,/Sprawdź/);
+ guest.hass={...guestHass,language:'en'};assert.match(guest.shadowRoot.querySelector('.intro-headline').textContent,/Surface slow/);assert.match(admin.shadowRoot.querySelector('.intro-headline').textContent,/Sprawdź/);assert.equal(adminHass.__calls.length,a);assert.equal(guestHass.__calls.length,b);admin.remove();guest.remove();shell.assertForeignUnchanged();assert.deepEqual(shell.errors,[]);
 });
