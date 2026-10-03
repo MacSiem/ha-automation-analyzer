@@ -935,3 +935,25 @@ test('tab navigation retains keyboard focus through click and refresh renders', 
   card.remove();
   assert.deepEqual(shell.errors, []);
 });
+
+for (const autoRefresh of [false, true]) {
+  test(`ordinary hass locale refresh preserves search selection with auto_refresh=${autoRefresh}`, { concurrency: false }, async t => {
+    const shell=createShell();t.after(()=>shell.dispose());shell.startCase();
+    const hass=createHassFixture({label:'locale-search',friendlyName:'QA locale automation'});
+    const card=shell.mount(hass,{auto_refresh:autoRefresh,show_support:false});await waitForLoaded(card);
+    const input=card.shadowRoot.querySelector('#aa-filter-input');assert.ok(input);
+    input.focus();input.value='QA locale';input.dispatchEvent(new shell.window.Event('input',{bubbles:true}));
+    const focused=card.shadowRoot.querySelector('#aa-filter-input');focused.setSelectionRange(1,7,'backward');
+    const before=hass.__calls.length;const generation=card._sessionGeneration;const cache=card._configCache;
+    card.hass={...hass,language:'pl'};
+    const pl=card.shadowRoot.querySelector('#aa-filter-input');assert.equal(pl.placeholder,'Szukaj automatyzacji…');assert.equal(pl.value,'QA locale');assert.equal(card.shadowRoot.activeElement,pl);assert.deepEqual([pl.selectionStart,pl.selectionEnd,pl.selectionDirection],[1,7,'backward']);
+    assert.equal(hass.__calls.length,before);assert.equal(card._sessionGeneration,generation);assert.equal(card._configCache,cache);
+    card.hass={...hass,language:'en'};const en=card.shadowRoot.querySelector('#aa-filter-input');assert.equal(en.placeholder,'Search automations…');assert.equal(en.value,'QA locale');assert.equal(card.shadowRoot.activeElement,en);assert.deepEqual([en.selectionStart,en.selectionEnd,en.selectionDirection],[1,7,'backward']);assert.equal(hass.__calls.length,before);card.remove();shell.assertForeignUnchanged();assert.deepEqual(shell.errors,[]);
+  });
+}
+test('ordinary locale refresh updates first-run and nonadmin trace notice independently', {concurrency:false}, async t=>{
+ const shell=createShell();t.after(()=>shell.dispose());shell.startCase();const adminHass=createHassFixture({label:'locale-admin'}),guestHass=createHassFixture({label:'locale-guest'});guestHass.user={id:'qa-guest',is_admin:false};guestHass.language='pl';
+ const admin=shell.mount(adminHass,{auto_refresh:false,show_support:false}),guest=shell.mount(guestHass,{auto_refresh:false,show_support:false});await waitForLoaded(admin);await waitForLoaded(guest);
+ const a=adminHass.__calls.length,b=guestHass.__calls.length;admin.hass={...adminHass,language:'pl'};assert.match(admin.shadowRoot.querySelector('.intro-headline').textContent,/Sprawdź/);assert.match(guest.shadowRoot.querySelector('.intro-headline').textContent,/Sprawdź/);
+ guest.hass={...guestHass,language:'en'};assert.match(guest.shadowRoot.querySelector('.intro-headline').textContent,/Surface slow/);assert.match(admin.shadowRoot.querySelector('.intro-headline').textContent,/Sprawdź/);assert.equal(adminHass.__calls.length,a);assert.equal(guestHass.__calls.length,b);admin.remove();guest.remove();shell.assertForeignUnchanged();assert.deepEqual(shell.errors,[]);
+});
