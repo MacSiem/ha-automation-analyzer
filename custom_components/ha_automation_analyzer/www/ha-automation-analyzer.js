@@ -1,4 +1,4 @@
-/* HA Tools split — ha-automation-analyzer v4.2.2 (2026-09-24) — single-tool standalone repo */
+/* HA Tools split — ha-automation-analyzer v5.0.1 (2026-09-24) — single-tool standalone repo */
 (function() {
 'use strict';
 

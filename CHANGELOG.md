@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Align both distributed card source headers with the integration candidate version 5.0.1; executable JavaScript and retained screenshot pixels are unchanged.
 - Refresh existing translated UI on ordinary Home Assistant language changes, including when auto-refresh is disabled. Preserve the focused search draft and complete selection range/direction without additional data or trace reads.
 
 ## Unreleased — integration development branch

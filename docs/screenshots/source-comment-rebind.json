@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-04T05:18:21.802647+00:00",
+  "scope": "Literal version in first non-executable comment only; manifest and cache const already5.0.1. No new pixel rendering/native acceptance.",
+  "source_binding": [
+    {
+      "path": "ha-automation-analyzer.js",
+      "before_sha256": "70de0ad0899b465b14b0d0f8ba33a116f8a769d99a80432551f86117534774eb",
+      "after_sha256": "fb49405441819cc48dc6558061e7d9831122922c5ada41bfe9d03e85731f2d39",
+      "all_bytes_after_first_comment_line_exact": true
+    },
+    {
+      "path": "custom_components/ha_automation_analyzer/www/ha-automation-analyzer.js",
+      "before_sha256": "70de0ad0899b465b14b0d0f8ba33a116f8a769d99a80432551f86117534774eb",
+      "after_sha256": "fb49405441819cc48dc6558061e7d9831122922c5ada41bfe9d03e85731f2d39",
+      "all_bytes_after_first_comment_line_exact": true
+    }
+  ],
+  "pixel_files_unchanged": true,
+  "render_samples_unchanged": true,
+  "historical_capture_provenance": "Existing deterministic captures and previously verified source lineage retained; this rebind follows exact identity of all executable JavaScript and CSS bytes after the first comment."
+}
