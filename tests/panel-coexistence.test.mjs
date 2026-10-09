@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { createShell, createHassFixture, waitFor } from './helpers/ha-shell.mjs';
 
 for (const legacyFirst of [true, false]) {
@@ -42,3 +43,12 @@ for (const legacyFirst of [true, false]) {
     assert.deepEqual(shell.errors,[]);
   });
 }
+
+
+test('loading the bundled module again keeps one card picker entry', t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.window.eval(readFileSync('ha-automation-analyzer.js','utf8'));
+  assert.equal(shell.window.customCards.filter(card=>card.type==='ha-automation-analyzer').length,1);
+  shell.assertForeignUnchanged();
+});
