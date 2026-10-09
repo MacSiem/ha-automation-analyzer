@@ -1845,10 +1845,10 @@ class HAAutomationAnalyzer extends HTMLElement {
   }
 
   async _loadChartJS() {
-    if (this._chartJsLoaded && window.Chart) return window.Chart;
-    if (window.Chart) {
+    if (this._chartJsLoaded) return AAChart;
+    if (document.createElement('canvas').getContext('2d')) {
       this._chartJsLoaded = true;
-      return window.Chart;
+      return AAChart;
     }
     this.shadowRoot.querySelectorAll('canvas').forEach(canvas => {
       canvas.closest('.canvas-wrap')?.classList.add('chart-unavailable-wrap');
@@ -4008,7 +4008,7 @@ ${styles}
     if (!this.isConnected || this._isLoading) return;
     if (this.currentTab === "optimization") return;
     try {
-      await this._loadChartJS();
+      if (!await this._loadChartJS()) return;
       if (!this.isConnected) return;
       if (this.currentTab === "overview") {
         this._drawTopAutomationsChart();
@@ -4031,7 +4031,7 @@ ${styles}
 
   _drawTopAutomationsChart() {
     const canvas = this.shadowRoot.getElementById("top-automations-chart");
-    if (!canvas || !window.Chart || this._traceStatsCapability?.status !== 'available') return;
+    if (!canvas || !this._chartJsLoaded || this._traceStatsCapability?.status !== 'available') return;
     this._destroyChart("top-auto");
 
     const data = this.getTopAutomations(5);
@@ -4045,7 +4045,7 @@ ${styles}
       : (this._lang === 'pl' ? 'Zachowane uruchomienia' : 'Retained runs');
 
     const colors = this._getComputedColors();
-    this._charts["top-auto"] = new window.Chart(canvas.getContext("2d"), {
+    this._charts["top-auto"] = new AAChart(canvas.getContext("2d"), {
       type: "bar",
       data: {
         labels,
@@ -4083,14 +4083,14 @@ ${styles}
 
   _drawExecDistChart() {
     const canvas = this.shadowRoot.getElementById("exec-dist-chart");
-    if (!canvas || !window.Chart) return;
+    if (!canvas || !this._chartJsLoaded) return;
     this._destroyChart("exec-dist");
 
     const distribution = this.getExecutionDistribution();
     const colors = this._getComputedColors();
     const barColors = ["#10B981", "#3B82F6", "#F59E0B", "#EF4444", "#991b1b"];
 
-    this._charts["exec-dist"] = new window.Chart(canvas.getContext("2d"), {
+    this._charts["exec-dist"] = new AAChart(canvas.getContext("2d"), {
       type: "bar",
       data: {
         labels: Object.keys(distribution),
@@ -4119,7 +4119,7 @@ ${styles}
 
   _drawTriggerTypeChart() {
     const canvas = this.shadowRoot.getElementById("trigger-type-chart");
-    if (!canvas || !window.Chart) return;
+    if (!canvas || !this._chartJsLoaded) return;
     this._destroyChart("trigger-type");
 
     const data = this.getTriggerTypeData();
@@ -4128,7 +4128,7 @@ ${styles}
     const palette = ["#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#0EA5E9","#14B8A6","#F97316"];
     const colors = this._getComputedColors();
 
-    this._charts["trigger-type"] = new window.Chart(canvas.getContext("2d"), {
+    this._charts["trigger-type"] = new AAChart(canvas.getContext("2d"), {
       type: "doughnut",
       data: {
         labels: data.map(d => d.type),
@@ -4156,7 +4156,7 @@ ${styles}
       ? this._traceStatsCapability.data : null;
     const runs = data?.runs;
     const summaryDays = data?.summary?.daily_counts;
-    if (!canvas || !window.Chart || (!Array.isArray(runs) && !Array.isArray(summaryDays))) return;
+    if (!canvas || !this._chartJsLoaded || (!Array.isArray(runs) && !Array.isArray(summaryDays))) return;
     this._destroyChart("sparkline");
 
     const now = new Date(Date.now());
@@ -4184,7 +4184,7 @@ ${styles}
     });
 
     const colors = this._getComputedColors();
-    this._charts["sparkline"] = new window.Chart(canvas.getContext("2d"), {
+    this._charts["sparkline"] = new AAChart(canvas.getContext("2d"), {
       type: "line",
       data: {
         labels,
