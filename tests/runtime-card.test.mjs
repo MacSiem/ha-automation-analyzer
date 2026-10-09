@@ -123,6 +123,31 @@ test('unavailable configuration remains unknown when its failed result is cached
   assert.deepEqual(shell.errors, []);
 });
 
+test('role or account changes immediately revoke configuration and retained statistics with auto_refresh disabled', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'config-session' });
+  const card = shell.mount(hass, { auto_refresh: false });
+  await waitForLoaded(card);
+  card.setActiveTab('performance');
+  for (const user of [{ id: 'household', is_admin: false }, { id: 'another-admin', is_admin: true }, { id: 'third-admin', is_admin: true }]) {
+    await card._loadTraceStatistics();
+    const before = hass.__calls.length;
+    card.hass = { ...hass, user };
+    assert.equal(card._configCache.size, 0);
+    assert.equal(card.triggerTypes.size, 0);
+    assert.equal(card._traceStatsCapability, null);
+    assert.deepEqual([...card.shadowRoot.querySelectorAll('.stats .stat-value')].map(node => node.textContent.trim()), ['—', '—', '—']);
+    assert.equal(card.shadowRoot.querySelector('#trigger-type-chart'), null);
+    assert.equal(hass.__calls.length, before, 'role or account invalidation does not prefetch');
+    await card._loadAndRender();
+    await waitForLoaded(card);
+  }
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
 function componentLeaks(shell, card) {
   return {
     listeners: shell.listeners.liveLongLivedFor(card),
