@@ -9,6 +9,11 @@ if (outputIndex < 0 || !process.argv[outputIndex + 1]) {
 }
 const output = path.resolve(process.argv[outputIndex + 1]);
 if (!output.startsWith('/Volumes/Samsung_SSD/')) throw new Error('Output must be on SSD');
+await fs.mkdir(output, { recursive: true });
+const realOutput = await fs.realpath(output);
+if (!realOutput.startsWith('/Volumes/Samsung_SSD/') || realOutput === await fs.realpath(root)) {
+  throw new Error('Output must resolve to an SSD artifact directory outside the source root');
+}
 const start = '/* BEGIN LOCAL CHART.JS */';
 const end = '/* END LOCAL CHART.JS */';
 let vendor = (await fs.readFile(path.join(root, 'vendor/chart.umd.min.js'), 'utf8'))

@@ -3666,6 +3666,8 @@ class HAAutomationAnalyzer extends HTMLElement {
         <div class="tab-content active">${activeTabContent}</div>
       `;
 
+    // Release observers and canvas references before replacing their DOM.
+    for (const key of Object.keys(this._charts)) this._destroyChart(key);
     this.shadowRoot.innerHTML = `
       <style>${HA_AUTOMATION_ANALYZER_BENTO_CSS}
 /* === HA Tools split — premium banners (donate / intro / prereq) === */

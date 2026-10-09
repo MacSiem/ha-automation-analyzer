@@ -140,6 +140,7 @@
     const states = Object.fromEntries(autos.map((automation) => [automation.entity_id, automation]));
 
     const hass = {
+      user: { is_admin: true },
       language: config.locale,
       themes: { darkMode: config.theme === "dark" },
       states,
@@ -155,6 +156,7 @@
               id: automation.attributes.id,
               alias: automation.attributes.friendly_name,
               mode: "single",
+              trigger: [{ platform: "state", entity_id: "sensor.demo_signal" }],
             },
           };
         }
@@ -206,6 +208,22 @@
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     if (!settled) throw new Error("card did not settle before the screenshot deadline");
+
+    // Exercise the real explicit administrator load before displaying its chart.
+    card.shadowRoot.querySelector('[data-tab="performance"]').click();
+    card.shadowRoot.getElementById('trace-stats-load').click();
+    for (let attempt = 0; attempt < 80 && card._traceStatsLoading; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    if (card._traceStatsCapability?.status !== 'available') throw new Error('Synthetic trace load failed');
+    await card._drawCharts();
+    const previousCharts = Object.values(card._charts);
+    if (previousCharts.length !== 3) throw new Error('Performance must draw all three local charts');
+    card.shadowRoot.querySelector('[data-tab="optimization"]').click();
+    if (previousCharts.some(chart => chart.canvas !== null) || Object.keys(card._charts).length) {
+      throw new Error('Detached charts were not released');
+    }
+    card.shadowRoot.querySelector('[data-tab="overview"]').click();
 
     card.shadowRoot
       ?.querySelectorAll("#tip-banner, [class*='banner'], .donate-section")
