@@ -68,6 +68,55 @@ async function waitForLoaded(card) {
   await flushTurns();
 }
 
+test('Performance distinguishes unknown statistics from accepted empty configuration', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  for (const language of ['en', 'pl']) {
+    const hass = createHassFixture({ label: 'empty-config', configs: [{ id: 'empty-config', triggers: [], actions: [], conditions: [] }] });
+    hass.language = language;
+    const card = shell.mount(hass);
+    await waitForLoaded(card);
+    card.setActiveTab('performance');
+    const values = () => [...card.shadowRoot.querySelectorAll('.stats .stat-value')].map(node => node.textContent.trim());
+    assert.deepEqual(values(), ['—', '—', '0']);
+    assert.match(card.shadowRoot.textContent, language === 'pl' ? /Brak skonfigurowanych wyzwalaczy/ : /No configured triggers/);
+    await card._loadTraceStatistics();
+    assert.deepEqual(values(), ['—', '0', '0'], 'a successful empty trace snapshot has a genuine zero');
+    card.hass = { ...hass, user: { id: 'household', is_admin: false } };
+    await card._loadAndRender();
+    await waitForLoaded(card);
+    assert.deepEqual(values(), ['—', '—', '—']);
+    assert.match(card.shadowRoot.textContent, language === 'pl' ? /konfiguracja wymaga uprawnień administratora/ : /configuration requires administrator access/);
+    card.remove();
+  }
+  assert.deepEqual(shell.errors, []);
+});
+
+test('unavailable configuration remains unknown when its failed result is cached', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const hass = createHassFixture({ label: 'config-failure' });
+  const original = hass.callWS.bind(hass);
+  hass.callWS = async message => {
+    if (message.type === 'automation/config') throw new Error('configuration unavailable');
+    return original(message);
+  };
+  const card = shell.mount(hass);
+  await waitForLoaded(card);
+  card.setActiveTab('performance');
+  for (let i = 0; i < 2; i += 1) {
+    assert.equal(card._configAccess, 'unavailable');
+    assert.deepEqual([...card.shadowRoot.querySelectorAll('.stats .stat-value')].map(node => node.textContent.trim()), ['—', '—', '—']);
+    assert.match(card.shadowRoot.textContent, /configuration unavailable/);
+    await card._loadAndRender();
+    await waitForLoaded(card);
+  }
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
 function componentLeaks(shell, card) {
   return {
     listeners: shell.listeners.liveLongLivedFor(card),
