@@ -2,7 +2,7 @@
   "schema_version": 2,
   "source": {
     "path": "ha-automation-analyzer.js",
-    "sha256": "edb13504a1de3eed3cd91c1f526a807da4f2cfee015eb5f1102d80b760d8410b"
+    "sha256": "502a538f6ba3a99c62a399433a680dc3721409c7eaac76aceeb8df839c0dec29"
   },
   "fixture": {
     "seed": "aa-demo-v1",
@@ -22,7 +22,7 @@
       "viewport": "desktop",
       "pixel_width": 480,
       "pixel_height": 1309,
-      "source_sha256": "edb13504a1de3eed3cd91c1f526a807da4f2cfee015eb5f1102d80b760d8410b",
+      "source_sha256": "502a538f6ba3a99c62a399433a680dc3721409c7eaac76aceeb8df839c0dec29",
       "image_sha256": "9e4023497d8cc3657e3bb5bdde522b8a4dbefb096d6bb064310bc7e30799c0f0",
       "render_sha256_samples": [
         "9e4023497d8cc3657e3bb5bdde522b8a4dbefb096d6bb064310bc7e30799c0f0",
@@ -46,7 +46,7 @@
       "viewport": "desktop",
       "pixel_width": 480,
       "pixel_height": 1309,
-      "source_sha256": "edb13504a1de3eed3cd91c1f526a807da4f2cfee015eb5f1102d80b760d8410b",
+      "source_sha256": "502a538f6ba3a99c62a399433a680dc3721409c7eaac76aceeb8df839c0dec29",
       "image_sha256": "48273dcefae12d4e092506ca6b34c5f38a3c46749868b45c97ce89b4e74a6fe5",
       "render_sha256_samples": [
         "48273dcefae12d4e092506ca6b34c5f38a3c46749868b45c97ce89b4e74a6fe5",
@@ -70,7 +70,7 @@
       "viewport": "narrow",
       "pixel_width": 360,
       "pixel_height": 1424,
-      "source_sha256": "edb13504a1de3eed3cd91c1f526a807da4f2cfee015eb5f1102d80b760d8410b",
+      "source_sha256": "502a538f6ba3a99c62a399433a680dc3721409c7eaac76aceeb8df839c0dec29",
       "image_sha256": "65bde0cdf19eb95d4322b1d9ed73ce8992e1b2bdae14593fc77df5c63693a133",
       "render_sha256_samples": [
         "65bde0cdf19eb95d4322b1d9ed73ce8992e1b2bdae14593fc77df5c63693a133",
