@@ -10,6 +10,24 @@ import {
   waitFor,
 } from './helpers/ha-shell.mjs';
 
+test('charts never depend on a Chart global supplied by another card', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const card = shell.mount(createHassFixture({ label: 'chart-local-dependency' }));
+  await waitForLoaded(card);
+  let globalReads = 0;
+  Object.defineProperty(shell.window, 'Chart', {
+    configurable: true,
+    get() { globalReads += 1; throw new Error('foreign Chart global was consulted'); },
+  });
+  // jsdom has no 2D canvas: the honest fallback still works without a global.
+  assert.equal(await card._loadChartJS(), null);
+  assert.equal(globalReads, 0);
+  card.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
 async function waitForLoaded(card) {
   await waitFor(
     () => card._loadingInProgress === false && card.automationStats.size > 0,
