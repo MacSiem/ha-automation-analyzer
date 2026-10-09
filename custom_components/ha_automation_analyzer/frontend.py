@@ -153,7 +153,11 @@ async def async_register_card(hass: HomeAssistant) -> str:
             previous = hass.data.get(DATA_EXTRA_URL)
             if previous and previous != url:
                 _remove_extra_module(hass)
-            if url not in hass.data.get(frontend.DATA_EXTRA_MODULE_URL, set()):
+            extra_modules = hass.data.get(frontend.DATA_EXTRA_MODULE_URL)
+            # HA exposes a UrlManager with a public .urls frozenset.
+            # It has add/remove methods but is not itself iterable.
+            extra_urls = getattr(extra_modules, "urls", extra_modules or ())
+            if url not in extra_urls:
                 frontend.add_extra_js_url(hass, url)
                 hass.data[DATA_EXTRA_URL] = url
             return "extra_js_url"
