@@ -383,7 +383,7 @@ export function createHassFixture({
   return hass;
 }
 
-export function createShell() {
+export function createShell({ beforeLoad } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
     runScripts: 'dangerously',
     pretendToBeVisual: true,
@@ -400,6 +400,7 @@ export function createShell() {
   const observers = installObserverLedger(window);
   const foreign = defineForeignCard(window);
   const source = readFileSync(resolve(process.cwd(), 'ha-automation-analyzer.js'), 'utf8');
+  beforeLoad?.(window);
   window.eval(`${source}\n//# sourceURL=ha-automation-analyzer.js`);
   if (!window.customElements.get(CARD_TAG)) {
     throw new Error(`${CARD_TAG} did not register`);
