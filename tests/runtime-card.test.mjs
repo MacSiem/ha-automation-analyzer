@@ -968,6 +968,38 @@ test('configuration enrichment retains counts and categories without retaining p
   assert.deepEqual(shell.errors, []);
 });
 
+test('support is admin-only, configurable and dismissal survives remounts', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  for (const user of [undefined, { is_admin: false }, { is_admin: 'true' }]) {
+    const hass = createHassFixture({ label: 'support-role' });
+    hass.user = user;
+    const card = shell.mount(hass);
+    await waitForLoaded(card);
+    assert.equal(card.shadowRoot.querySelector('.donate-section'), null);
+    card.remove();
+  }
+  const hass = createHassFixture({ label: 'support-admin' });
+  const hidden = shell.mount(hass, { show_support: false });
+  await waitForLoaded(hidden);
+  assert.equal(hidden.shadowRoot.querySelector('.donate-section'), null);
+  hidden.remove();
+  const card = shell.mount(hass);
+  await waitForLoaded(card);
+  assert.ok(card.shadowRoot.querySelector('.donate-section'));
+  card.shadowRoot.querySelector('.support-dismiss').click();
+  assert.equal(card.shadowRoot.querySelector('.donate-section'), null);
+  card.render();
+  assert.equal(card.shadowRoot.querySelector('.donate-section'), null);
+  card.remove();
+  const reopened = shell.mount(hass);
+  await waitForLoaded(reopened);
+  assert.equal(reopened.shadowRoot.querySelector('.donate-section'), null);
+  reopened.remove();
+  assert.deepEqual(shell.errors, []);
+});
+
 test('non-admin users keep state statistics without calling admin-only config commands', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());

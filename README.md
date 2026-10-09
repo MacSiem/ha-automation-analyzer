@@ -20,7 +20,10 @@ privacy-minimized trace summary:
    with zero API calls.
 2. **Progressive, data-minimized enrichment.** The card reads the automation
    configuration needed for trigger/action/condition counts, keeps only those
-   derived counts, and discards the raw configuration after the load completes.
+   derived counts, trigger categories and the automation identifier. Only confirmed
+   administrators request configuration; raw payloads are discarded after each
+   response. Derived metadata is cached locally and cleared on disconnect or a
+   session change.
    It does not fetch state history or traces from Overview or in the background.
 3. **Traces only where requested.** Opening Timeline loads the selected automation's
    trace list and one selected run. An administrator can explicitly load one global

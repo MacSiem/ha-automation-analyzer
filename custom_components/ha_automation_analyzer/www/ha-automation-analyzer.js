@@ -1899,7 +1899,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     if (!hass || typeof hass.callWS !== 'function' || !Array.isArray(automations)) return [];
     // automation/config is an admin-only Home Assistant command. Non-admin users keep the
     // state-based statistics and see trigger details as unavailable instead of an error.
-    if (hass.user && hass.user.is_admin === false) {
+    if (hass.user?.is_admin !== true) {
       this._configAccess = 'admin_required';
       return [];
     }
@@ -1918,7 +1918,18 @@ class HAAutomationAnalyzer extends HTMLElement {
           const result = await hass.callWS({ type: 'automation/config', entity_id: entityId });
           if (inactive()) return;
           const config = result && typeof result === 'object' ? result.config : null;
-          this._configCache.set(entityId, config && typeof config === 'object' ? config : null);
+          // Retain only metadata used by the card, never raw automation payloads.
+          let metadata = null;
+          if (config && typeof config === 'object') {
+            const parsed = this._parseAutomationConfig(config);
+            metadata = {
+              id: typeof config.id === 'string' ? config.id : null,
+              totalActions: parsed.actions.length,
+              conditions: parsed.conditions.length,
+              triggerTypes: this._getTriggerTypes(parsed.triggers),
+            };
+          }
+          this._configCache.set(entityId, metadata);
         } catch (_error) {
           if (inactive()) return;
           failures += 1;
@@ -1955,9 +1966,9 @@ class HAAutomationAnalyzer extends HTMLElement {
   _getTriggerTypes(triggers) {
     const types = new Set();
     triggers.forEach(trigger => {
-      if (typeof trigger === "object") {
+      if (trigger && typeof trigger === "object") {
         const type = trigger.platform || trigger.trigger;
-        if (type) types.add(type);
+        if (typeof type === "string" && type) types.add(type);
       }
     });
     return Array.from(types);
@@ -2084,11 +2095,10 @@ class HAAutomationAnalyzer extends HTMLElement {
         const configObj = configByEntityId.get(a.id);
         const existing = this.automationStats.get(a.id);
         if (existing && configObj) {
-          const parsed = this._parseAutomationConfig(configObj);
-          const triggerTypesList = this._getTriggerTypes(parsed.triggers);
+          const triggerTypesList = configObj.triggerTypes;
           existing.automationId = configObj.id || existing.automationId;
-          existing.totalActions = parsed.actions.length;
-          existing.conditions = parsed.conditions.length;
+          existing.totalActions = configObj.totalActions;
+          existing.conditions = configObj.conditions;
           existing.triggerTypes = triggerTypesList;
           existing.primaryTrigger = triggerTypesList[0] || "unknown";
           a.internalId = existing.automationId;
@@ -2096,7 +2106,6 @@ class HAAutomationAnalyzer extends HTMLElement {
             this.triggerTypes.set(type, (this.triggerTypes.get(type) || 0) + 1);
           });
         }
-        a.configObj = configObj;
       }
       this._applyTraceStatistics(retainedTraceStatistics);
       // Re-render with enriched config data
@@ -4300,6 +4309,8 @@ ${styles}
     this._refreshTimer = null;
     this._renderScheduled = false;
     // Clear all Map objects to prevent memory leaks
+    this._configCache.clear();
+    this._configCacheAt = 0;
     this.automationStats.clear();
     this.triggerTypes.clear();
     this.failedAutomations.clear();
