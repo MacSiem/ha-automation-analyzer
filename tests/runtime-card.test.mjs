@@ -919,6 +919,55 @@ test('routine hass updates during a load do not restart it (issue #2 livelock)',
   assert.deepEqual(shell.errors, []);
 });
 
+test('configuration requests wait for an explicitly known administrator role', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  for (const user of [undefined, null, {}, { is_admin: 'true' }, { is_admin: 1 }]) {
+    const hass = createHassFixture({ label: 'unknown-config-role' });
+    hass.user = user;
+    const card = shell.mount(hass);
+    await waitForLoaded(card);
+    assert.equal(hass.__calls.some(call => call.payload?.type === 'automation/config'), false);
+    assert.equal(card.automationStats.size, 1);
+    assert.equal(card._configAccess, 'admin_required');
+    card.hass = { ...hass, user: { id: 'known-admin', is_admin: true } };
+    await waitFor(() => hass.__calls.some(call => call.payload?.type === 'automation/config'), 'config enrichment after role is known');
+    await waitForLoaded(card);
+    assert.deepEqual([...card.automationStats.get('automation.unknown-config-role').triggerTypes], ['state']);
+    card.remove();
+  }
+  assert.deepEqual(shell.errors, []);
+});
+
+test('configuration enrichment retains counts and categories without retaining private payloads', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const privateValue = 'private-payload-not-needed-for-analysis';
+  const hass = createHassFixture({ label: 'minimal-config', configs: [{
+    id: 'minimal-config', alias: privateValue, variables: { privateValue },
+    triggers: [{ trigger: 'time', at: privateValue }],
+    actions: [{ action: 'notify.example', data: { message: privateValue } }, { delay: privateValue }],
+    conditions: [{ condition: 'template', value_template: privateValue }],
+  }] });
+  const card = shell.mount(hass);
+  await waitForLoaded(card);
+  const stats = card.automationStats.get('automation.minimal-config');
+  assert.equal(stats.automationId, 'minimal-config');
+  assert.equal(stats.totalActions, 2);
+  assert.equal(stats.conditions, 1);
+  assert.deepEqual([...stats.triggerTypes], ['time']);
+  assert.doesNotMatch(JSON.stringify([...card._configCache]), /private-payload-not-needed-for-analysis|value_template|notify\.example/);
+  card._loadAndRender();
+  await waitForLoaded(card);
+  assert.equal(hass.__calls.filter(call => call.payload?.type === 'automation/config').length, 1, 'derived metadata can be reused');
+  assert.equal(card.automationStats.get('automation.minimal-config').totalActions, 2);
+  card.remove();
+  assert.equal(card._configCache.size, 0);
+  assert.deepEqual(shell.errors, []);
+});
+
 test('non-admin users keep state statistics without calling admin-only config commands', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());
