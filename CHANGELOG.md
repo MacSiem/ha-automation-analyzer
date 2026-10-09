@@ -1,19 +1,14 @@
-## Unreleased
+# Changelog — Automation Analyzer
 
-- Align both distributed card source headers with the integration candidate version 5.0.1; executable JavaScript and retained screenshot pixels are unchanged.
-- Refresh existing translated UI on ordinary Home Assistant language changes, including when auto-refresh is disabled. Preserve the focused search draft and complete selection range/direction without additional data or trace reads.
+## 5.0.1 — unreleased integration candidate
 
-## Unreleased — integration development branch
-
-- Follow the selected Polish or English language in first-run guidance and optional support controls.
-
-- Preserve keyboard focus on navigation tabs when switching views or refreshing data.
-
-- Initialize the standalone panel with the same title and disabled-automation defaults as a Lovelace card.
-- Report unknown or unavailable states without asserting an unsupported configuration failure.
-
-- Add an optional Home Assistant integration with an administrator panel and on-demand server-side retained-trace summary. The summary sends only bounded counts and durations to the browser.
-- Keep the existing standalone dashboard card and native trace path for current HACS users; the category change is pending.
+- Add an optional administrator-only Home Assistant integration panel and an on-demand server summary of retained executions, errors and measured durations. The server sends bounded aggregates rather than global raw traces.
+- Keep the standalone Dashboard card and its native trace path working during the HACS category migration. A separate panel component always uses the bundled integration code even when an older Dashboard card loaded first; repeated module loading keeps one card-picker entry.
+- Preserve explicitly loaded trace statistics across ordinary automatic refreshes and keep Overview, Performance and Optimization consistent (follow-up to #2).
+- Preserve manual Lovelace resources and user edits. Only integration-created resources with durable, confirmed ownership are upgraded or removed; failed receipt writes roll back the new unedited resource. YAML cleanup removes only the module this integration added.
+- Give the sidebar panel the same defaults as the Dashboard card; distinguish unknown and unavailable automation states without inventing a configuration failure.
+- Follow Polish and English in first-run guidance and optional support controls, retain navigation keyboard focus, and update translated UI on ordinary language changes while preserving the search draft and selection.
+- Keep trace requests explicit, administrator-only and bounded; provide redacted local diagnostics and source-bound synthetic screenshots.
 
 ## 4.2.2 (2026-09-24)
 
@@ -52,7 +47,6 @@
 
 - Fix (UI): the small accent dot before section titles no longer detaches from the title text (it was pushed to the opposite edge by the header's flex space-between); it is now pinned next to the title.
 
-# Changelog — Automation Analyzer
 
 ## [4.1.10] - 2026-07-12
 

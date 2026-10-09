@@ -68,12 +68,15 @@ The integration package is prepared on the development branch. For a manual
 development installation, copy `custom_components/ha_automation_analyzer` into
 `<config>/custom_components/`, restart Home Assistant, and add **Automation Analyzer**
 under Settings → Devices & services. It serves the same card and registers a
-sidebar panel for administrators. HACS integration installation requires a
-published integration package and an accepted category change.
+sidebar panel for administrators. HACS custom integration installation requires a published integration package.
+The default HACS catalog stays in the Dashboard category until its separate
+migration is accepted and verified; a custom installation does not complete that
+migration.
 
 Keep your working Dashboard plugin, its resources, and existing card configuration
-while trying the integration. In storage mode the integration reuses the existing
-card resource. Check that your dashboards still work and the integration is loaded
+while trying the integration. In storage mode the integration leaves existing
+card resources unchanged. The sidebar panel uses the bundled integration code
+even if an older Dashboard card loaded first. Check that your dashboards still work and the integration is loaded
 before retiring the plugin. The public plugin remains available until the
 integration release and migration have been verified. A category change alone
 is not a verified migration.
@@ -152,6 +155,22 @@ MIT, see [LICENSE](LICENSE).
 
 ## Privacy and data
 
-The card reads automation states and explicitly requested trace summaries from Home Assistant. Trace details can reveal entity names and actions. Keep exports and debugging captures local; remove identifiers and action data before sharing a report.
+Automation states and administrator-only configuration counts stay inside your
+Home Assistant instance and browser. The optional integration computes a bounded
+summary from retained traces: counts, durations, local dates and automation IDs;
+it sends no raw actions, trigger payloads or run IDs in that summary. Timeline
+reads one selected full trace and immediately normalizes it to the allowed
+structure. The local diagnostic export omits Home Assistant identifiers, names,
+absolute timestamps, variables, configuration and action payloads.
+
+There is no analytics, telemetry or external runtime data transfer. Component-local
+browser storage keeps only your dismissal/preferences; the integration stores
+resource ownership receipts locally in Home Assistant. These receipts identify
+resources it created and never adopt manually added resources by URL. Uninstall
+preserves user resources and edits. Keep raw debugging captures local and use only
+synthetic, redacted reports when asking for support.
+
+This is an unofficial community integration, not affiliated with or endorsed by
+Home Assistant or the Open Home Foundation.
 
 See [SECURITY.md](SECURITY.md) for safe vulnerability reporting and [NOTICE](NOTICE) for licensing notices.
