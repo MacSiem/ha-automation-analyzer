@@ -1,0 +1,10 @@
+{
+  "name": "Chart.js",
+  "version": "4.5.1",
+  "tarball": "https://registry.npmjs.org/chart.js/-/chart.js-4.5.1.tgz",
+  "tarball_sha256": "f540d98468457ac7a0aabb32006dfb066297e096c5ea063a5d80aa973d1c337a",
+  "vendor_sha256": "48444a82d4edcb5bec0f1965faacdde18d9c17db3063d042abada2f705c9f54a",
+  "license": "MIT",
+  "license_source": "https://github.com/chartjs/Chart.js/blob/v4.5.1/LICENSE.md",
+  "sibling_source_byte_identical": true
+}
