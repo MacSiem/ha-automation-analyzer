@@ -24,6 +24,9 @@ jobs:
           - core: '2026.10.0'
             python: '3.14'
             harness: '0.13.371'
+          - core: '2026.10.0b4'
+            python: '3.14'
+            harness: '0.13.370'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

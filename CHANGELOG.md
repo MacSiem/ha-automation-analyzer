@@ -4,6 +4,7 @@
 
 - Restrict configuration enrichment to confirmed administrators and retain only counts, trigger categories and automation identifiers; discard raw payloads and clear cached metadata on disconnect.
 - Distinguish unknown statistics from successfully loaded empty data in Performance, and explain whether trigger configuration is empty, unavailable or restricted to administrators.
+- Immediately clear configuration-derived charts and retained statistics when the user or role changes, including when automatic refresh is disabled.
 - Add an optional administrator-only Home Assistant integration panel and an on-demand server summary of retained executions, errors and measured durations. The server sends bounded aggregates rather than global raw traces.
 - Keep the standalone Dashboard card and its native trace path working during the HACS category migration. A separate panel component always uses the bundled integration code even when an older Dashboard card loaded first; repeated module loading keeps one card-picker entry.
 - Preserve explicitly loaded trace statistics across ordinary automatic refreshes and keep Overview, Performance and Optimization consistent (follow-up to #2).

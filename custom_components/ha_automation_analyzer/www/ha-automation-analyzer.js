@@ -1412,6 +1412,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     this._traceStatsBaseMetrics = null;
     this._lastHassConnection = null;
     this._lastTraceRole = 'unknown';
+    this._lastTraceUserId = null;
     this._lastAutomationSetSignature = '';
     // Session generation changes only when the connection, the user role, or the set of
     // automations changes. Ordinary state updates create new hass objects many times per
@@ -1468,6 +1469,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     const nextConnection = hass?.connection || null;
     const nextRole = hass?.user && typeof hass.user.is_admin === 'boolean'
       ? (hass.user.is_admin ? 'admin' : 'non_admin') : 'unknown';
+    const nextUserId = typeof hass?.user?.id === 'string' ? hass.user.id : null;
     let nextAutomationSetSignature = '';
     try {
       nextAutomationSetSignature = Object.entries(hass?.states || {})
@@ -1479,11 +1481,20 @@ class HAAutomationAnalyzer extends HTMLElement {
     const traceSnapshotChanged = !previousHass
       || this._lastHassConnection !== nextConnection
       || this._lastTraceRole !== nextRole
+      || this._lastTraceUserId !== nextUserId
       || this._lastAutomationSetSignature !== nextAutomationSetSignature;
     if (traceSnapshotChanged) {
       this._sessionGeneration += 1;
       this._configCache.clear();
       this._configCacheAt = 0;
+      this._configAccess = nextRole === 'admin' ? 'unknown' : 'admin_required';
+      this.triggerTypes.clear();
+      for (const stats of this.automationStats.values()) {
+        stats.totalActions = null;
+        stats.conditions = null;
+        stats.triggerTypes = [];
+        stats.primaryTrigger = 'unknown';
+      }
     }
     const hasTimelineState = Boolean(
       this._activeTimelineToken || this._timelineLoading || this._timelineData
@@ -1493,6 +1504,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     if (traceSnapshotChanged) this._invalidateTraceStatistics();
     this._lastHassConnection = nextConnection;
     this._lastTraceRole = nextRole;
+    this._lastTraceUserId = nextUserId;
     this._lastAutomationSetSignature = nextAutomationSetSignature;
     let timelineInvalidated = false;
     if (traceSnapshotChanged && hasTimelineState) {

@@ -23,7 +23,7 @@ privacy-minimized trace summary:
    derived counts, trigger categories and the automation identifier. Only confirmed
    administrators request configuration; raw payloads are discarded after each
    response. Derived metadata is cached locally and cleared on disconnect or a
-   session change.
+   session change, including a change of user or administrator privileges.
    It does not fetch state history or traces from Overview or in the background.
 3. **Traces only where requested.** Opening Timeline loads the selected automation's
    trace list and one selected run. An administrator can explicitly load one global
