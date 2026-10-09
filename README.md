@@ -58,14 +58,14 @@ Dark mode follows your Home Assistant theme automatically.*
 
 ## Installation
 
-For the currently published dashboard package:
+For the standalone Dashboard package:
 
 1. Open HACS → Custom repositories.
 2. Add `https://github.com/MacSiem/ha-automation-analyzer` as category **Dashboard**.
 3. Install **HA Automation Analyzer** and reload your browser.
 
-The integration package is prepared on the development branch. For a manual
-development installation, copy `custom_components/ha_automation_analyzer` into
+Version 5.0.1 also includes an optional integration. For a manual installation,
+copy `custom_components/ha_automation_analyzer` from the release archive into
 `<config>/custom_components/`, restart Home Assistant, and add **Automation Analyzer**
 under Settings → Devices & services. It serves the same card and registers a
 sidebar panel for administrators. HACS custom integration installation requires a published integration package.

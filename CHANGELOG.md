@@ -1,6 +1,6 @@
 # Changelog — Automation Analyzer
 
-## 5.0.1 — unreleased integration candidate
+## 5.0.1 (2026-10-09)
 
 - Add an optional administrator-only Home Assistant integration panel and an on-demand server summary of retained executions, errors and measured durations. The server sends bounded aggregates rather than global raw traces.
 - Keep the standalone Dashboard card and its native trace path working during the HACS category migration. A separate panel component always uses the bundled integration code even when an older Dashboard card loaded first; repeated module loading keeps one card-picker entry.
