@@ -227,20 +227,41 @@ async def test_failed_creation_receipt_preserves_same_id_edited_during_save(hass
 async def test_yaml_fallback_is_removed_without_touching_other_modules(hass):
     from homeassistant.components import frontend
     from unittest.mock import patch
-    hass.data[frontend.DATA_EXTRA_MODULE_URL] = {"/user-module.js"}
+    modules = frontend.UrlManager(lambda *_: None, ["/user-module.js"])
+    hass.data[frontend.DATA_EXTRA_MODULE_URL] = modules
     with patch.object(card, "_lovelace_mode", return_value="yaml"):
         assert await card.async_register_card(hass) == "extra_js_url"
-    assert hass.data[frontend.DATA_EXTRA_MODULE_URL] == {"/user-module.js", card.versioned_card_url()}
+    assert modules.urls == {"/user-module.js", card.versioned_card_url()}
     await card.async_unregister_card(hass)
-    assert hass.data[frontend.DATA_EXTRA_MODULE_URL] == {"/user-module.js"}
+    assert modules.urls == {"/user-module.js"}
 
 
 async def test_preexisting_yaml_module_is_not_adopted(hass):
     from homeassistant.components import frontend
     from unittest.mock import patch
     before = {"/user-module.js", card.versioned_card_url()}
-    hass.data[frontend.DATA_EXTRA_MODULE_URL] = before.copy()
+    modules = frontend.UrlManager(lambda *_: None, list(before))
+    hass.data[frontend.DATA_EXTRA_MODULE_URL] = modules
     with patch.object(card, "_lovelace_mode", return_value="yaml"):
         await card.async_register_card(hass)
     await card.async_unregister_card(hass)
-    assert hass.data[frontend.DATA_EXTRA_MODULE_URL] == before
+    assert modules.urls == before
+
+
+@pytest.mark.parametrize("preexisting", [False, True])
+async def test_real_yaml_frontend_setup_reload_and_remove(hass, preexisting):
+    from homeassistant.components import frontend
+
+    assert await async_setup_component(hass, "lovelace", {"lovelace": {"mode": "yaml"}})
+    modules = hass.data[frontend.DATA_EXTRA_MODULE_URL]
+    assert isinstance(modules, frontend.UrlManager)
+    modules.add("/user-module.js")
+    if preexisting:
+        modules.add(card.versioned_card_url())
+    before = modules.urls
+    entry = await _setup(hass)
+    assert modules.urls == before | {card.versioned_card_url()}
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    assert modules.urls == before | {card.versioned_card_url()}
+    await hass.config_entries.async_remove(entry.entry_id)
+    assert modules.urls == before
