@@ -6,6 +6,7 @@ VERSION = "5.0.1"
 
 CARD_FILENAME = "ha-automation-analyzer.js"
 CARD_ELEMENT = "ha-automation-analyzer"
+PANEL_ELEMENT = "ha-automation-analyzer-panel"
 STATIC_URL_BASE = f"/{DOMAIN}"
 CARD_URL = f"{STATIC_URL_BASE}/{CARD_FILENAME}"
 

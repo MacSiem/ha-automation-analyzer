@@ -4289,6 +4289,12 @@ Object.defineProperty(HAAutomationAnalyzer, 'traceContract', {
 
 if (!customElements.get('ha-automation-analyzer')) customElements.define("ha-automation-analyzer", HAAutomationAnalyzer);
 
+// The integration panel must use this bundle even when an older HACS card
+// already owns the dashboard element name. Keep that existing card intact.
+if (!customElements.get('ha-automation-analyzer-panel')) {
+  customElements.define('ha-automation-analyzer-panel', class extends HAAutomationAnalyzer {});
+}
+
 class HaAutomationAnalyzerEditor extends HTMLElement {
   constructor() {
     super();
@@ -4353,4 +4359,6 @@ if (!customElements.get('ha-automation-analyzer-editor')) { customElements.defin
 })();
 
 window.customCards = window.customCards || [];
-window.customCards.push({ type: 'ha-automation-analyzer', name: 'Automation Analyzer', description: 'Analyze automation performance, find issues and optimize', preview: false });
+if (!window.customCards.some(card => card.type === 'ha-automation-analyzer')) {
+  window.customCards.push({ type: 'ha-automation-analyzer', name: 'Automation Analyzer', description: 'Analyze automation performance, find issues and optimize', preview: false });
+}

@@ -14,7 +14,7 @@ from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import (
-    CARD_ELEMENT,
+    PANEL_ELEMENT,
     CARD_FILENAME,
     CARD_URL,
     PANEL_ICON,
@@ -233,7 +233,7 @@ async def async_register_panel(hass: HomeAssistant) -> bool:
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL_PATH,
-        webcomponent_name=CARD_ELEMENT,
+        webcomponent_name=PANEL_ELEMENT,
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
         module_url=versioned_card_url(),
