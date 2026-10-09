@@ -134,9 +134,10 @@ uploaded.
 **Does this send data anywhere?**
 No telemetry and no external runtime requests — analysis runs inside your Home
 Assistant instance. The integration summarizes retained traces on the server;
-the standalone card reads them through Home Assistant's WebSocket API. If Chart.js is not already available
-in the Home Assistant frontend, the card shows a compact numerical fallback instead
-of downloading a library from a CDN.
+the standalone card reads them through Home Assistant's WebSocket API. Chart.js
+4.5.1 is bundled locally under the MIT License and isolated from other cards.
+Charts require a browser with 2D canvas support; otherwise a compact numerical
+fallback remains available. No library is downloaded from a CDN.
 
 ## Changelog
 

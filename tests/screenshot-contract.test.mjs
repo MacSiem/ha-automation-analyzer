@@ -152,8 +152,8 @@ test("manifest binds exact current source and two deterministic renders", () => 
     );
     assert.deepEqual(capture.layout.horizontal_overflow, false);
     assert.deepEqual(capture.runtime, { locale: "en-US", timezone: "UTC", loading: false });
-    assert.ok(capture.layout.chart_state_height >= 44);
-    assert.ok(capture.layout.chart_panel_height <= 170, `${variant.file} retains a large blank chart panel`);
+    assert.ok(capture.layout.painted_chart_count >= 1, `${variant.file} did not draw its local chart`);
+    assert.ok(capture.layout.chart_panel_height >= 120);
   }
 
   assertPrivacySafe("manifest", JSON.stringify(manifest));

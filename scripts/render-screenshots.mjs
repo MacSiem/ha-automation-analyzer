@@ -289,7 +289,15 @@ async function captureOnce(client, origin, variant, sourceSha256) {
     const rect = card.getBoundingClientRect();
     const captureRect = document.body.getBoundingClientRect();
     const chartState = card.shadowRoot?.querySelector(".chart-unavailable, .chart-empty");
-    const chartPanel = chartState?.closest(".card");
+    const canvases = [...(card.shadowRoot?.querySelectorAll('canvas') || [])];
+    const paintedCharts = canvases.filter(canvas => {
+      const context = canvas.getContext('2d');
+      if (!context || !canvas.width || !canvas.height) return false;
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      for (let i = 3; i < pixels.length; i += 4) if (pixels[i] > 0) return true;
+      return false;
+    });
+    const chartPanel = (paintedCharts[0] || chartState)?.closest(".card");
     const chartStateRect = chartState?.getBoundingClientRect();
     const chartPanelRect = chartPanel?.getBoundingClientRect();
     return {
@@ -315,6 +323,7 @@ async function captureOnce(client, origin, variant, sourceSha256) {
       bodyClientWidth: document.body.clientWidth,
       chartStateHeight: chartStateRect?.height || 0,
       chartPanelHeight: chartPanelRect?.height || 0,
+      paintedChartCount: paintedCharts.length,
       text: card.shadowRoot?.textContent || ""
     };
   })()`);
@@ -340,10 +349,10 @@ async function captureOnce(client, origin, variant, sourceSha256) {
   if (!/Automation Analyzer/.test(readback.text) || !/Demo automation/.test(readback.text)) {
     throw new Error(`Synthetic fixture did not render in ${variant.file}`);
   }
-  if (readback.chartStateHeight < 44 || readback.chartPanelHeight > 170) {
+  if (readback.paintedChartCount < 1 || readback.chartPanelHeight < 120) {
     throw new Error(
-      `Chart state leaves an invalid panel footprint in ${variant.file}: `
-      + `state=${readback.chartStateHeight}, panel=${readback.chartPanelHeight}`,
+      `Local chart did not paint in ${variant.file}: `
+      + `painted=${readback.paintedChartCount}, panel=${readback.chartPanelHeight}`,
     );
   }
   if (blocked.size > 0) {
@@ -412,6 +421,7 @@ async function main() {
           horizontal_overflow: false,
           chart_state_height: Math.round(selected.readback.chartStateHeight),
           chart_panel_height: Math.round(selected.readback.chartPanelHeight),
+          painted_chart_count: selected.readback.paintedChartCount,
         },
         runtime: { locale: selected.readback.locale, timezone: selected.readback.timezone, loading: false },
       });

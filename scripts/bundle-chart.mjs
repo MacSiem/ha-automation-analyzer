@@ -11,9 +11,14 @@ const output = path.resolve(process.argv[outputIndex + 1]);
 if (!output.startsWith('/Volumes/Samsung_SSD/')) throw new Error('Output must be on SSD');
 const start = '/* BEGIN LOCAL CHART.JS */';
 const end = '/* END LOCAL CHART.JS */';
-const vendor = (await fs.readFile(path.join(root, 'vendor/chart.umd.min.js'), 'utf8'))
+let vendor = (await fs.readFile(path.join(root, 'vendor/chart.umd.min.js'), 'utf8'))
   .replace(/^\/\/# sourceMappingURL=.*$/gm, '').trim();
 if (!vendor.includes('Chart.js v4.5.1')) throw new Error('Unexpected vendored Chart.js version');
+// Chart.js also exports window.Chart inside its factory, even in CommonJS mode.
+// Remove that one legacy global export while keeping the official vendor intact.
+const globalExport = '"undefined"!=typeof window&&(window.Chart=Tn),';
+if (vendor.split(globalExport).length !== 2) throw new Error('Unexpected Chart.js global export');
+vendor = vendor.replace(globalExport, '');
 const license = await fs.readFile(path.join(root, 'vendor/Chart.js-LICENSE.md'), 'utf8');
 let source = await fs.readFile(path.join(root, 'ha-automation-analyzer.js'), 'utf8');
 if (source.includes(start)) {
@@ -22,8 +27,7 @@ if (source.includes(start)) {
   if (last < 0) throw new Error('Incomplete existing bundle');
   source = source.slice(0, first) + source.slice(last + end.length).replace(/^\n+/, '');
 }
-// The UMD CommonJS branch receives local bindings, so it never publishes Chart
-// to the global object or consumes another card's constructor.
+// Local CommonJS bindings plus removal of the legacy export isolate Chart.js.
 const bundle = `${start}\n/*\n${license}*/\nconst AAChart = (() => {\nconst module = { exports: {} };\nconst exports = module.exports;\n${vendor}\nreturn module.exports;\n})();\n${end}\n`;
 const anchor = "'use strict';\n\n";
 if (source.split(anchor).length !== 2) throw new Error('Missing component closure anchor');

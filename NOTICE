@@ -1,3 +1,8 @@
 Copyright (c) 2024-2026 MacSiem
 
 This project is distributed under the MIT License. See LICENSE for the full terms.
+
+The standalone and integration cards bundle Chart.js 4.5.1, copyright Chart.js
+Contributors, under the MIT License. The full license is embedded in both card
+files and is also available in vendor/Chart.js-LICENSE.md. The vendored source
+matches the official npm package; see vendor/Chart.js-PROVENANCE.json.

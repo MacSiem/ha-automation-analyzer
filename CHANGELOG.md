@@ -6,6 +6,8 @@
 - Keep the standalone Dashboard card and its native trace path working during the HACS category migration. A separate panel component always uses the bundled integration code even when an older Dashboard card loaded first; repeated module loading keeps one card-picker entry.
 - Preserve explicitly loaded trace statistics across ordinary automatic refreshes and keep Overview, Performance and Optimization consistent (follow-up to #2).
 - Preserve manual Lovelace resources and user edits. Only integration-created resources with durable, confirmed ownership are upgraded or removed; failed receipt writes roll back the new unedited resource. YAML cleanup removes only the module this integration added.
+- Support Home Assistant's actual YAML UrlManager during setup and reload, preserving existing user modules on uninstall.
+- Bundle a component-local Chart.js 4.5.1 so standalone charts work without a CDN or a Chart global from another card; retain the numerical fallback when 2D canvas is unavailable.
 - Give the sidebar panel the same defaults as the Dashboard card; distinguish unknown and unavailable automation states without inventing a configuration failure.
 - Follow Polish and English in first-run guidance and optional support controls, retain navigation keyboard focus, and update translated UI on ordinary language changes while preserving the search draft and selection.
 - Keep trace requests explicit, administrator-only and bounded; provide redacted local diagnostics and source-bound synthetic screenshots.

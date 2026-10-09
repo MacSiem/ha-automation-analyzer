@@ -10,6 +10,22 @@ import {
   waitFor,
 } from './helpers/ha-shell.mjs';
 
+test('loading the card preserves another card’s Chart constructor', { concurrency: false }, t => {
+  const foreignChart = function ForeignChart() {};
+  let globalWrites = 0;
+  const shell = createShell({ beforeLoad(window) {
+    Object.defineProperty(window, 'Chart', {
+      configurable: true,
+      get() { return foreignChart; },
+      set() { globalWrites += 1; },
+    });
+  } });
+  t.after(() => shell.dispose());
+  assert.equal(shell.window.Chart, foreignChart);
+  assert.equal(globalWrites, 0);
+  assert.deepEqual(shell.errors, []);
+});
+
 test('charts never depend on a Chart global supplied by another card', { concurrency: false }, async t => {
   const shell = createShell();
   t.after(() => shell.dispose());
