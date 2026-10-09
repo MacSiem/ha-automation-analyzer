@@ -1604,6 +1604,8 @@ class HAAutomationAnalyzer extends HTMLElement {
         executionTimeDistribution: 'Rozk\u0142ad czas\u00f3w wykonania',
         noExecutionTimeData: 'Brak danych o czasach wykonania \u2014 zbyt ma\u0142o uruchomie\u0144 z pe\u0142nymi danymi',
         noTriggerData: 'Brak danych o wyzwalaczach \u2014 konfiguracja automatyzacji niedost\u0119pna',
+        noConfiguredTriggers: 'Brak skonfigurowanych wyzwalaczy',
+        triggerConfigAdminRequired: 'Dane o wyzwalaczach: konfiguracja wymaga uprawnień administratora',
         errorBadge: 'b\u0142\u0105d',
         disabledBadge: 'wy\u0142\u0105czona',
         enableButton: 'W\u0142\u0105cz',
@@ -1734,6 +1736,8 @@ class HAAutomationAnalyzer extends HTMLElement {
         executionTimeDistribution: 'Execution time distribution',
         noExecutionTimeData: 'No execution time data \u2014 too few runs with complete data',
         noTriggerData: 'No trigger data \u2014 automation configuration unavailable',
+        noConfiguredTriggers: 'No configured triggers',
+        triggerConfigAdminRequired: 'Trigger data: configuration requires administrator access',
         errorBadge: 'error',
         disabledBadge: 'disabled',
         enableButton: 'Enable',
@@ -1942,7 +1946,8 @@ class HAAutomationAnalyzer extends HTMLElement {
     await Promise.all(workers);
     if (inactive()) return [];
     if (pending.length > 0) this._configCacheAt = now;
-    this._configAccess = failures > 0 && failures === pending.length && pending.length > 0 ? 'unavailable' : 'available';
+    this._configAccess = automations.every(([entityId]) => this._configCache.get(entityId))
+      ? 'available' : 'unavailable';
     if (failures > 0) console.warn('[ha-automation-analyzer] automation_config_partial', failures);
     const configs = [];
     for (const [entityId] of automations) {
@@ -3396,6 +3401,9 @@ class HAAutomationAnalyzer extends HTMLElement {
     } else if (this.currentTab === 'performance') {
       const hasExecData = this.executionTimes.length > 0;
       const hasTriggerData = this.triggerTypes.size > 0;
+      const hasConfiguration = this._configAccess === 'available';
+      const triggerEmptyMessage = hasConfiguration ? this._t.noConfiguredTriggers
+        : this._configAccess === 'admin_required' ? this._t.triggerConfigAdminRequired : this._t.noTriggerData;
 
       activeTabContent = `
         ${this._renderTraceStatsControl()}
@@ -3409,7 +3417,7 @@ class HAAutomationAnalyzer extends HTMLElement {
           <h2 class="card-title">${this._t.triggerTypesTitle}</h2>
           ${hasTriggerData
             ? '<div class="canvas-wrap"><canvas id="trigger-type-chart"></canvas></div>'
-            : `<div class="chart-empty">${this._t.noTriggerData}</div>`}
+            : `<div class="chart-empty">${triggerEmptyMessage}</div>`}
         </div>
         <div class="card ${hasRetainedRunData ? '' : 'chart-empty-card'}">
           <h2 class="card-title">${this._t.dailyExecutions}</h2>
@@ -3425,11 +3433,11 @@ class HAAutomationAnalyzer extends HTMLElement {
               <div class="stat-label">${this._t.avgTimeLabel}</div>
             </div>
             <div class="stat">
-              <div class="stat-value">${this.executionTimes.length}</div>
+              <div class="stat-value">${hasTraceStatistics ? this.executionTimes.length : '\u2014'}</div>
               <div class="stat-label">${this._t.withTimeData}</div>
             </div>
             <div class="stat">
-              <div class="stat-value">${this.triggerTypes.size}</div>
+              <div class="stat-value">${hasConfiguration ? this.triggerTypes.size : '\u2014'}</div>
               <div class="stat-label">${this._t.triggerTypes}</div>
             </div>
           </div>
