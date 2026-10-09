@@ -3257,7 +3257,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     const totalActive = Array.from(this.automationStats.values()).filter(a => a.state === "on").length;
     const hasTraceStatistics = this._traceStatsCapability?.status === 'available';
     const hasCompletedTraceSnapshot = hasTraceStatistics
-      || (this._traceStatsCapability?.status === 'no_data' && this._traceStatsCapability.data !== null);
+      || (this._traceStatsCapability?.status === 'no_data' && Boolean(this._traceStatsCapability.data));
     const hasRetainedRunData = hasTraceStatistics
       && Array.from(this.automationStats.values()).some(item => item.traceCount > 0);
     const stats = {

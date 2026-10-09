@@ -83,6 +83,12 @@ test('Performance distinguishes unknown statistics from accepted empty configura
     assert.match(card.shadowRoot.textContent, language === 'pl' ? /Brak skonfigurowanych wyzwalaczy/ : /No configured triggers/);
     await card._loadTraceStatistics();
     assert.deepEqual(values(), ['—', '0', '0'], 'a successful empty trace snapshot has a genuine zero');
+    hass.callWS = async message => {
+      if (message.type === 'trace/list') throw Object.assign(new Error('not found'), { code: 'not_found' });
+      return { config: { id: 'empty-config', triggers: [], actions: [], conditions: [] } };
+    };
+    await card._loadTraceStatistics({ force: true });
+    assert.deepEqual(values(), ['—', '—', '0'], 'an endpoint error cannot masquerade as an accepted empty snapshot');
     card.hass = { ...hass, user: { id: 'household', is_admin: false } };
     await card._loadAndRender();
     await waitForLoaded(card);
