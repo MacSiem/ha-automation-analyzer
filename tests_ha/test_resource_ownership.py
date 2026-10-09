@@ -253,8 +253,9 @@ async def test_real_yaml_frontend_setup_reload_and_remove(hass, preexisting):
     from homeassistant.components import frontend
 
     assert await async_setup_component(hass, "http", {})
-    assert await async_setup_component(hass, "frontend", {})
-    assert await async_setup_component(hass, "lovelace", {"lovelace": {"mode": "yaml"}})
+    # Frontend sets up its Lovelace dependency; pass YAML mode at that boundary.
+    assert await async_setup_component(hass, "frontend", {"lovelace": {"mode": "yaml"}})
+    assert card._lovelace_mode(hass) == "yaml"
     modules = hass.data[frontend.DATA_EXTRA_MODULE_URL]
     assert isinstance(modules, frontend.UrlManager)
     modules.add("/user-module.js")
