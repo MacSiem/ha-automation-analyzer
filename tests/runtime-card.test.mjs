@@ -10,6 +10,22 @@ import {
   waitFor,
 } from './helpers/ha-shell.mjs';
 
+test('replacing a chart view releases its detached canvas and observers', { concurrency: false }, async t => {
+  const shell = createShell();
+  t.after(() => shell.dispose());
+  shell.startCase();
+  const card = shell.mount(createHassFixture({ label: 'chart-view-lifecycle' }));
+  await waitForLoaded(card);
+  let destroyed = 0;
+  card._charts['top-auto'] = { destroy() { destroyed += 1; } };
+  card.setActiveTab('optimization');
+  assert.equal(destroyed, 1);
+  assert.deepEqual(Object.keys(card._charts), []);
+  card.remove();
+  assert.equal(destroyed, 1);
+  assert.deepEqual(shell.errors, []);
+});
+
 test('loading the card preserves another card’s Chart constructor', { concurrency: false }, t => {
   const foreignChart = function ForeignChart() {};
   let globalWrites = 0;
