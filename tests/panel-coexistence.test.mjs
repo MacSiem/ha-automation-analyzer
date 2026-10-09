@@ -23,7 +23,7 @@ for (const legacyFirst of [true, false]) {
       hass.__calls.push({kind:'callWS',payload:message});
       return {schema:'aa-trace-summary-v1',run_count:2,execution_count:2,
         by_automation:{'panel-collision':{trace_count:2,today_count:2,error_count:1,avg_execution_ms:120}},
-        daily_counts:[{date:'2026-08-31',count:2}],durations_ms:[100,140]};
+        daily_counts:Array.from({length:14},(_,index)=>({date:`2026-08-${String(18+index).padStart(2,'0')}`,count:index===13?2:0})),durations_ms:[100,140]};
     };
     panel.hass = hass;
     assert.equal(typeof panel._loadTraceStatistics, 'function', 'panel must instantiate the bundled implementation');

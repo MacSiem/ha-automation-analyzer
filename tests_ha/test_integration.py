@@ -26,6 +26,7 @@ async def test_setup_registers_card_resource_and_admin_panel(hass: HomeAssistant
     assert urls == [f"{CARD_URL}?v={VERSION}"]
     panel = hass.data[frontend.DATA_PANELS][PANEL_URL_PATH]
     assert panel.require_admin is True
+    assert panel.config["_panel_custom"]["name"] == "ha-automation-analyzer-panel"
 
 
 async def test_existing_hacs_card_resource_is_not_duplicated(hass: HomeAssistant) -> None:
