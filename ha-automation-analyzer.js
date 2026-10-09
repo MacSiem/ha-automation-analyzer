@@ -3815,7 +3815,7 @@ ${styles}
         </div>
         ${mainContent}
       </div>
-      ${this._hass?.user?.is_admin && this.config?.show_support !== false && !_localSupportDismissed() ? _renderLocalSupport(this._lang) : ''}
+      ${this._hass?.user?.is_admin === true && this.config?.show_support !== false && !_localSupportDismissed() ? _renderLocalSupport(this._lang) : ''}
     `;
 
     _bindLocalIntroDismiss(this.shadowRoot);

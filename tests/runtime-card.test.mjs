@@ -932,6 +932,7 @@ test('configuration requests wait for an explicitly known administrator role', {
     assert.equal(card.automationStats.size, 1);
     assert.equal(card._configAccess, 'admin_required');
     card.hass = { ...hass, user: { id: 'known-admin', is_admin: true } };
+    await card._loadAndRender();
     await waitFor(() => hass.__calls.some(call => call.payload?.type === 'automation/config'), 'config enrichment after role is known');
     await waitForLoaded(card);
     assert.deepEqual([...card.automationStats.get('automation.unknown-config-role').triggerTypes], ['state']);
