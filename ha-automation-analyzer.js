@@ -2643,30 +2643,63 @@ class HAAutomationAnalyzer extends HTMLElement {
   async _toggleAutomation(entityId, enable) {
     if (!this._hass) return;
     const epoch = this._lifecycleEpoch;
+    const generation = this._sessionGeneration;
     const hass = this._hass;
+    const previousEntity = hass.states?.[entityId];
+    const previousState = previousEntity?.state;
     try {
       await hass.callService("automation", enable ? "turn_on" : "turn_off", {
         entity_id: entityId
       });
-      if (!this._isLifecycleActive(epoch, hass)) return;
-      this._toast((enable ? "Enabled " : "Disabled ") + entityId.replace(/^automation\./, ""));
+      if (!this._isLifecycleActive(epoch, hass, generation)) return;
+      // Service acceptance is not state evidence. Only a new HA entity snapshot
+      // with the requested transition confirms the currently observed state.
+      const observedEntity = this._hass.states?.[entityId];
+      const confirmed = observedEntity !== previousEntity
+        && previousState === (enable ? 'off' : 'on')
+        && observedEntity?.state === (enable ? 'on' : 'off');
+      const message = this._lang === 'pl'
+        ? confirmed
+          ? (enable ? 'Zaobserwowano włączoną automatyzację.' : 'Zaobserwowano wyłączoną automatyzację.')
+          : (enable ? 'Przyjęto żądanie włączenia automatyzacji; jej stan nie został jeszcze potwierdzony.'
+            : 'Przyjęto żądanie wyłączenia automatyzacji; jej stan nie został jeszcze potwierdzony.')
+        : confirmed
+          ? (enable ? 'Observed automation state: enabled.' : 'Observed automation state: disabled.')
+          : (enable ? 'Enable request accepted; the automation state is not yet confirmed.'
+            : 'Disable request accepted; the automation state is not yet confirmed.');
+      this._toast(message, confirmed ? 'success' : 'unconfirmed');
       // Refresh data after toggle
+      if (this._refreshTimer) clearTimeout(this._refreshTimer);
       this._refreshTimer = setTimeout(() => {
         this._refreshTimer = null;
-        if (this.isConnected) this._loadAndRender();
+        if (this._isLifecycleActive(epoch, hass, generation)) this._loadAndRender();
       }, 1000);
     } catch (_error) {
-      if (!this._isLifecycleActive(epoch, hass)) return;
+      if (!this._isLifecycleActive(epoch, hass, generation)) return;
       console.error('[ha-automation-analyzer] automation_toggle_failed');
-      this._toast(this._lang === 'pl'
-        ? 'Nie można zmienić stanu automatyzacji.' : 'Could not change automation state.', true);
+      // Never read backend text or invoke a code getter. Unknown failures can
+      // happen after the service executed, so they cannot prove rejection.
+      let rejected = false;
+      try {
+        const descriptor = _error && typeof _error === 'object'
+          ? Reflect.getOwnPropertyDescriptor(_error, 'code') : null;
+        rejected = !!descriptor && 'value' in descriptor
+          && ['unauthorized', 'service_not_found', 'invalid_format'].includes(descriptor.value);
+      } catch (_ignored) {}
+      const message = this._lang === 'pl'
+        ? rejected ? 'Żądanie zmiany stanu automatyzacji zostało odrzucone.'
+          : 'Nie potwierdzono zmiany stanu automatyzacji. Sprawdź jej stan przed ponowieniem.'
+        : rejected ? 'The automation state change request was rejected.'
+          : 'The automation state change was not confirmed. Check its state before trying again.';
+      this._toast(message, rejected ? 'error' : 'unconfirmed');
     }
   }
 
-  _toast(message, isError) {
+  _toast(message, outcome = 'unconfirmed') {
     try {
+      const result = createUiV3({ language: this._lang }).status(outcome);
       this.dispatchEvent(new CustomEvent("hass-notification", {
-        detail: { message: (isError ? "⚠️ " : "") + message },
+        detail: { message: `${result.icon} ${result.label} — ${message}` },
         bubbles: true,
         composed: true,
       }));
@@ -4247,10 +4280,21 @@ class HAAutomationAnalyzer extends HTMLElement {
         const summary = this._timelineData.summary;
         const startDate = summary?.started_at ? new Date(summary.started_at) : null;
         const totalDuration = trace.run_duration_ms;
-        const isError = trace.nodes.some(node => node.status === 'error');
-        const statusBadge = isError
-          ? `<span class="tl-meta-badge err">${this._t.timelineFail}</span>`
-          : `<span class="tl-meta-badge ok">${this._t.timelinePass}</span>`;
+        const matchingSummary = summary?.run_id === trace.run_id && summary?.item_id === trace.item_id;
+        const isError = trace.nodes.some(node => node.status === 'error')
+          || (matchingSummary && summary.script_execution === 'error');
+        // An error-free node list alone does not establish a completed run.
+        // Use the accepted producer summary without widening the full-trace
+        // contract or the redacted diagnostic export.
+        const confirmedSuccess = matchingSummary && trace.kind === 'execution'
+          && summary.kind === 'execution' && trace.run_state === 'stopped'
+          && summary.run_state === 'stopped' && summary.script_execution === 'finished'
+          && typeof summary.finished_at === 'string' && Number.isFinite(totalDuration)
+          && totalDuration === summary.run_duration_ms;
+        const outcome = isError ? 'error'
+          : trace.kind === 'non_execution' || trace.nodes.length === 0 ? 'no_data'
+            : confirmedSuccess ? 'success' : 'unconfirmed';
+        const statusBadge = createUiV3({ language: this._lang }).statusHtml(outcome);
         const stepsHtml = this._renderTimelineSteps(trace);
         timelineBody = `${this._renderTimelineComparison()}
           <div class="tl-meta-row">
@@ -4302,7 +4346,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     // Release observers and canvas references before replacing their DOM.
     for (const key of Object.keys(this._charts)) this._destroyChart(key);
     this.shadowRoot.innerHTML = `
-      <style>${HA_AUTOMATION_ANALYZER_BENTO_CSS}
+      <style>${HA_AUTOMATION_ANALYZER_BENTO_CSS}${createUiV3({ language: this._lang }).css}
 /* === HA Tools split — premium banners (donate / intro / prereq) === */
 
 /* Donation footer — diamond top */
