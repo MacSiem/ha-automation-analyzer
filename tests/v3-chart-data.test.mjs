@@ -7,8 +7,10 @@ const summary = () => ({ schema: 'aa-trace-summary-v1', run_count: 6, execution_
   daily_counts: Array.from({ length: 14 }, (_, i) => ({ date: '2026-08-' + String(18 + i).padStart(2, '0'), count: i === 13 ? 6 : 0 })),
   durations_ms: [0, 99, 100, 500, 5000], private_extra: 'UNRENDERED_PRIVATE_CANARY' });
 async function fixture(t, { load = true, server = true, traces = [], now, zone = 'UTC', provider = summary } = {}) {
-  const shell = createShell(); t.after(() => shell.dispose()); shell.startCase();
-  if (now) shell.window.Date.now = () => Date.parse(now);
+  const shell = createShell({ beforeLoad(window) {
+    const NativeDate = window.Date, observed = Date.parse(now || '2026-08-31T10:00Z');
+    window.Date = class extends NativeDate { constructor(...args) { super(...(args.length ? args : [observed])); } static now() { return observed; } };
+  } }); t.after(() => shell.dispose()); shell.startCase();
   const hass = createHassFixture({ label: 'measured', friendlyName: 'Measured automation <safe>', traces,
     configs: [{ id: 'measured', alias: 'Measured automation <safe>', triggers: [{ trigger: 'state' }, { trigger: 'time' }], conditions: [], actions: [{ action: 'light.turn_on' }] }] });
   hass.config.time_zone = zone;
