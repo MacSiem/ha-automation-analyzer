@@ -4124,7 +4124,7 @@ ${styles}
     const traceStatsLoad = this.shadowRoot.getElementById('trace-stats-load');
     if (traceStatsLoad) {
       traceStatsLoad.addEventListener('click', () => this._loadTraceStatistics({
-        force: this._traceStatsCapability?.status === 'available'
+        force: true
       }));
     }
 
