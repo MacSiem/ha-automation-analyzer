@@ -832,7 +832,7 @@ test('attached toggle failure emits only a fixed safe message and never reads th
   } finally {
     shell.window.console.error = nativeConsoleError;
   }
-  assert.equal(notification, '⚠️ Could not change automation state.');
+  assert.equal(notification, '? Unconfirmed — The automation state change was not confirmed. Check its state before trying again.');
   assert.deepEqual(consoleErrors, [['[ha-automation-analyzer] automation_toggle_failed']]);
   assert.doesNotMatch(JSON.stringify({ notification, consoleErrors }), /PRIVATE_TOGGLE_MESSAGE/);
   card.remove();
