@@ -18,6 +18,7 @@ for (const language of ['en', 'pl']) {
     const cases = [
       { name: 'running', state: 'running', outcome: null, duration: null, expected: 'unconfirmed' },
       { name: 'running-finished', state: 'running', outcome: 'finished', duration: null, expected: 'unconfirmed' },
+      { name: 'stopped-missing', state: 'stopped', outcome: null, duration: null, expected: 'unconfirmed' },
       { name: 'success', state: 'stopped', outcome: 'finished', duration: 100, expected: 'success' },
       { name: 'zero', state: 'stopped', outcome: 'finished', duration: 0, expected: 'success' },
       { name: 'null', state: 'stopped', outcome: null, duration: 100, expected: 'unconfirmed' },
@@ -57,12 +58,15 @@ for (const language of ['en', 'pl']) {
       if (scenario.nonExecution) {
         assert.equal(card._timelineData.empty, true);
         assert.equal(card._timelineData.trace, undefined);
-        assert.equal(hass.__calls.filter(call => call.message?.type === 'trace/get').length, 0, 'non-executions remain excluded from trace requests');
+        assert.equal(hass.__calls.filter(call => call.payload?.type === 'trace/list').length, 1);
+        assert.equal(hass.__calls.filter(call => call.payload?.type === 'trace/get').length, 0, 'non-executions remain excluded from trace requests');
       } else assert.equal(card._timelineData.trace.run_duration_ms, scenario.duration);
       const meta = card.shadowRoot.querySelector('.tl-meta-row')?.textContent || '';
       if (scenario.duration === null) {
         assert.doesNotMatch(meta, /\b0ms/);
-        assert.match(meta, language === 'pl' ? /w toku/ : /running/);
+        assert.match(meta, scenario.state === 'running'
+          ? language === 'pl' ? /w toku/ : /running/
+          : language === 'pl' ? /Nie zmierzono/ : /Not measured/);
       } else if (scenario.duration === 0) assert.match(meta, /\b0ms/);
       assert.doesNotMatch(card.shadowRoot.innerHTML, /PRIVATE_NODE_ERROR|private_resident|private-running-context/);
 
