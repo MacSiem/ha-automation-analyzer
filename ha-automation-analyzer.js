@@ -1660,6 +1660,56 @@ const _LOCAL_INTRO_PL = {
   steps: ['Przegląd pokazuje liczbę automatyzacji, ocenę i najczęstsze błędy.', 'Wydajność porządkuje automatyzacje według średniego czasu wykonania.', 'Optymalizacja wskazuje możliwe usprawnienia, w tym pętle i zbędne wyzwalacze.']
 };
 const _LOCAL_SUPPORT_KEY = 'ha-automation-analyzer-support-dismissed';
+// Same native-handler navigation pattern as Trace Viewer; card width owns the switch.
+function _aaBindNavigation(card, restoreFocus) {
+  const root = card.shadowRoot, nav = root.querySelector('.tabs');
+  if (!nav) return;
+  const group = card.ownerDocument.createElement('div');
+  group.className = 'aa-tab-picker';
+  const label = card.ownerDocument.createElement('label');
+  label.htmlFor = 'aa-tab-picker'; label.textContent = card._lang === 'pl' ? 'Zakładka' : 'Tab';
+  const select = card.ownerDocument.createElement('select'); select.id = 'aa-tab-picker';
+  const buttons = Array.from(nav.querySelectorAll('.tab-btn[data-tab]'));
+  for (const button of buttons) {
+    const option = card.ownerDocument.createElement('option');
+    option.value = button.dataset.tab; option.textContent = button.textContent.trim(); select.append(option);
+  }
+  select.value = card.currentTab;
+  group.append(label, select); nav.before(group);
+  select.addEventListener('change', () => {
+    const button = Array.from(root.querySelectorAll('.tab-btn[data-tab]'))
+      .find(item => item.dataset.tab === select.value && !item.disabled);
+    button?.click();
+  });
+  const applyWidth = width => {
+    const currentNav = root.querySelector('.tabs'), picker = root.querySelector('.aa-tab-picker');
+    if (!card.isConnected || !currentNav || !picker) return;
+    const currentSelect = picker.querySelector('select'), active = root.activeElement;
+    const narrow = width > 0 && width < 280;
+    const fromTab = currentNav.contains(active), fromPicker = active === currentSelect;
+    currentNav.hidden = narrow; picker.hidden = !narrow;
+    if (narrow && fromTab) currentSelect.focus({ preventScroll: true });
+    else if (!narrow && fromPicker) currentNav.querySelector('.tab-btn.active')?.focus({ preventScroll: true });
+  };
+  if (typeof ResizeObserver === 'function') {
+    if (!card._aaNavObserver) {
+      card._aaNavObserver = new ResizeObserver(entries => {
+        const entry = entries.find(item => item.target === card);
+        if (!entry || !card.isConnected) return;
+        card._aaNavWidth = entry.contentRect.width; applyWidth(card._aaNavWidth);
+      });
+      card._aaNavObserver.observe(card);
+    }
+    const measured = card.getBoundingClientRect().width;
+    if (measured > 0) card._aaNavWidth = measured;
+    applyWidth(card._aaNavWidth || 900);
+  } else { nav.hidden = false; group.hidden = false; }
+  if (restoreFocus) {
+    if (nav.hidden) select.focus({ preventScroll: true });
+    else nav.querySelector('.tab-btn.active')?.focus({ preventScroll: true });
+  }
+}
+
 // Shared family touch-target and focus rules, scoped to this card/editor.
 const _AA_CONTROL_CSS = `
 :host button,:host summary,:host a[href],:host [role=button],
@@ -1674,6 +1724,11 @@ const _AA_CONTROL_CSS = `
   outline:3px solid var(--bento-primary,var(--primary-color,#1769aa)) !important;outline-offset:2px;
 }
 .intro-banner { padding-right:68px !important; }
+.aa-tab-picker { display:flex;flex-direction:column;gap:6px;margin-bottom:16px; }
+.aa-tab-picker select { width:100%;font:inherit;padding:8px;color:var(--bento-text);background:var(--bento-card);border:1px solid var(--bento-border);border-radius:8px; }
+.aa-tab-picker[hidden],.tabs[hidden] { display:none !important; }
+.tabs { flex-wrap:wrap !important;overflow:visible !important;max-width:100%; }
+.tabs .tab-btn { white-space:normal !important; }
 .auto-item,.auto-item-full { min-height:44px; }
 .auto-item { flex-wrap:wrap; }
 .auto-item .auto-name { flex:1 1 160px;max-width:100%;white-space:normal;overflow-wrap:anywhere; }
@@ -3411,6 +3466,10 @@ class HAAutomationAnalyzer extends HTMLElement {
   render() {
     if (!this._hass || !this.isConnected) return;
     const focusedControl = this.shadowRoot.activeElement;
+    const navigationFocus = focusedControl?.matches('.tab-btn,#aa-tab-picker');
+    const paginationFocus = focusedControl?.matches('.pagination-btn,.page-size-select') ? {
+      tab: focusedControl.dataset.pageTab, direction: focusedControl.dataset.pageDirection
+    } : null;
     const chartFocus = focusedControl?.dataset.aaChartControl ? {
       key: focusedControl.closest('[data-aa-chart]')?.dataset.aaChart, control: focusedControl.dataset.aaChartControl
     } : null;
@@ -3422,8 +3481,6 @@ class HAAutomationAnalyzer extends HTMLElement {
     // Preserve the live dialog and its frozen bytes while the underlying card repaints.
     exportContainer?.remove();
     this._buildChartModelsV3();
-    const focusedTab = this.shadowRoot.activeElement?.matches('.tab-btn')
-      ? this.shadowRoot.activeElement.dataset.tab : null;
     const styles = `
       
 /* ===== BENTO DESIGN SYSTEM (local fallback) ===== */
@@ -4528,9 +4585,12 @@ ${_AA_CONTROL_CSS}
       const control = Array.from(section?.querySelectorAll('[data-aa-chart-control]') || []).find(node => node.dataset.aaChartControl === chartFocus.control);
       control?.focus({ preventScroll: true });
     }
-    if (focusedTab) {
-      const replacement = Array.from(this.shadowRoot.querySelectorAll('.tab-btn'))
-        .find(button => button.dataset.tab === focusedTab);
+    _aaBindNavigation(this, navigationFocus);
+    if (paginationFocus) {
+      const controls = Array.from(this.shadowRoot.querySelectorAll('.pagination-btn,.page-size-select'))
+        .filter(control => control.dataset.pageTab === paginationFocus.tab);
+      const replacement = controls.find(control => control.dataset.pageDirection === paginationFocus.direction && !control.disabled)
+        || controls.find(control => control.matches('.page-size-select'));
       replacement?.focus({ preventScroll: true });
     }
     if (!this._isLoading) {
@@ -4552,11 +4612,11 @@ ${_AA_CONTROL_CSS}
     this._currentPage[tabName] = page;
     return `
       <div class="pagination">
-        <button class="pagination-btn" data-page-tab="${tabName}" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>&#8249; Prev</button>
+        <button class="pagination-btn" data-page-direction="previous" data-page-tab="${tabName}" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>${this._lang === 'pl' ? '‹ Poprzednia' : '‹ Previous'}</button>
         <span class="pagination-info">${page} / ${totalPages} (${totalItems})</span>
-        <button class="pagination-btn" data-page-tab="${tabName}" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>Next &#8250;</button>
+        <button class="pagination-btn" data-page-direction="next" data-page-tab="${tabName}" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>${this._lang === 'pl' ? 'Następna ›' : 'Next ›'}</button>
         <select class="page-size-select" aria-label="${this._lang === 'pl' ? 'Wyniki na stronie' : 'Results per page'}" data-page-tab="${tabName}" data-action="page-size">
-          ${[10,15,25,50].map(s => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}/page</option>`).join('')}
+          ${[10,15,25,50].map(s => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}/${this._lang === 'pl' ? 'str.' : 'page'}</option>`).join('')}
         </select>
       </div>`;
   }
@@ -4979,6 +5039,8 @@ ${_AA_CONTROL_CSS}
   }
 
   disconnectedCallback() {
+    this._aaNavObserver?.disconnect();
+    this._aaNavObserver = null;
     this._diagnosticDialogV3?.destroy();
     this._diagnosticDialogV3 = null;
     window.removeEventListener('offline', this._diagnosticNetworkHandlerV3);
