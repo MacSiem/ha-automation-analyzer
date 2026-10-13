@@ -2209,16 +2209,17 @@ class HAAutomationAnalyzer extends HTMLElement {
   }
 
   _getComputedColors() {
-    const style = getComputedStyle(document.documentElement);
+    const style = getComputedStyle(this);
+    const dark = this.classList.contains('bento-dark');
     return {
       primary: style.getPropertyValue("--primary-color").trim() || "#3B82F6",
-      secondary: style.getPropertyValue("--secondary-text-color").trim() || "#64748b",
+      secondary: style.getPropertyValue("--secondary-text-color").trim() || (dark ? "#94a3b8" : "#64748b"),
       error: style.getPropertyValue("--error-color").trim() || "#EF4444",
       success: style.getPropertyValue("--success-color").trim() || "#10B981",
       warning: style.getPropertyValue("--warning-color").trim() || "#F59E0B",
       textPrimary: style.getPropertyValue("--primary-text-color").trim() || "#1e293b",
       border: style.getPropertyValue("--divider-color").trim() || "#e0e0e0",
-      cardBg: style.getPropertyValue("--card-background-color").trim() || "#ffffff",
+      cardBg: style.getPropertyValue("--card-background-color").trim() || (dark ? "#16213e" : "#ffffff"),
       accent: style.getPropertyValue("--accent-color").trim() || "#3B82F6"
     };
   }
@@ -2787,7 +2788,8 @@ class HAAutomationAnalyzer extends HTMLElement {
     const runs = available ? (cap.data?.runs || []).filter(run => run.kind === 'execution') : [];
     const timezone = this._traceStatsTimezoneV3 || this._aaCalendarZoneV3();
     const executionCount = summary?.execution_count ?? runs.length;
-    const common = { source: available ? cap.source : null, timezone, observed_at: available ? cap.observed_at : null,
+    const timezoneKnown = this._hass?.config?.time_zone === timezone;
+    const common = { source: available ? cap.source : null, timezone, timezoneKnown, observed_at: available ? cap.observed_at : null,
       measuredCount: available ? this.executionTimes.length : 0, executionCount };
     const make = (title, rows, metadata = {}) => Object.freeze({ ...common, title, unit: pl ? 'wykonania' : 'runs',
       ...metadata, rows: Object.freeze(rows.map(row => Object.freeze(row))) });
@@ -2826,6 +2828,14 @@ class HAAutomationAnalyzer extends HTMLElement {
     }
   }
 
+  _chartValueV3(value, unit) {
+    if (this._lang !== 'pl') return `${value} ${unit === 'triggers' ? (value === 1 ? 'trigger' : 'triggers') : (value === 1 ? 'run' : 'runs')}`;
+    const form = new Intl.PluralRules('pl').select(value);
+    const words = unit === 'wyzwalacze' ? { one: 'wyzwalacz', few: 'wyzwalacze', many: 'wyzwalaczy' }
+      : { one: 'wykonanie', few: 'wykonania', many: 'wykonań' };
+    return `${value} ${words[form] || words.many}`;
+  }
+
   _chartTableV3(key) {
     const model = this._aaChartModelsV3[key];
     return `<table class="aa-chart-data"><caption>${_esc(model.title)} · ${_esc(model.unit)}</caption><thead><tr><th scope="col">${this._lang === 'pl' ? 'Punkt' : 'Point'}</th><th scope="col">${this._lang === 'pl' ? 'Liczba' : 'Count'}</th></tr></thead><tbody>${model.rows.map(row =>
@@ -2843,17 +2853,17 @@ class HAAutomationAnalyzer extends HTMLElement {
       <h2 class="card-title">${_esc(model.title)}</h2>
       <p class="aa-chart-caption">${caveat}</p>
       ${key === 'exec-dist' && model.source ? `<p class="aa-chart-caption">${model.measuredCount}/${model.executionCount} ${pl ? 'wykonań z pomiarem czasu; pozostałe bez pomiaru.' : 'runs with duration measurements; remaining durations unavailable.'}</p>` : ''}
-      <p class="aa-chart-source">${pl ? 'Źródło' : 'Source'}: ${_esc(model.source || '—')}<br>${_esc(model.timezone)} · ${pl ? 'Odczyt' : 'Read'}: ${_esc(model.observed_at || '—')}</p>
+      <p class="aa-chart-source">${pl ? 'Źródło' : 'Source'}: ${_esc(model.source || '—')}<br>${_esc(model.timezone)}${model.timezoneKnown ? '' : (pl ? ' (strefa HA niedostępna)' : ' (HA timezone unavailable)')} · ${pl ? 'Odczyt' : 'Read'}: ${_esc(model.observed_at || '—')}</p>
       <div class="aa-chart-controls" role="group" aria-label="${pl ? 'Widok' : 'View'}">
         <button type="button" data-aa-chart-control="chart" aria-pressed="${state.view === 'chart'}">${pl ? 'Wykres' : 'Chart'}</button>
         <button type="button" data-aa-chart-control="data" aria-pressed="${state.view === 'data'}">${pl ? 'Dane' : 'Data'}</button>
       </div>
       ${!row ? `<div class="chart-empty">${_esc(emptyText)}</div>` : `
         <label class="aa-chart-point-label">${pl ? 'Wybierz punkt' : 'Select point'}
-          <select data-aa-chart-control="point">${model.rows.map(item => `<option value="${_esc(item.id)}" ${item.id === row.id ? 'selected' : ''}>${_esc(item.label)} · ${item.value} ${_esc(model.unit)}</option>`).join('')}</select>
+          <select data-aa-chart-control="point">${model.rows.map(item => `<option value="${_esc(item.id)}" ${item.id === row.id ? 'selected' : ''}>${_esc(item.label)} · ${_esc(this._chartValueV3(item.value, model.unit))}</option>`).join('')}</select>
         </label>
         <div class="aa-chart-controls"><button type="button" data-aa-chart-control="previous" ${index === 0 ? 'disabled' : ''}>${pl ? 'Poprzedni' : 'Previous'}</button><button type="button" data-aa-chart-control="next" ${index === model.rows.length - 1 ? 'disabled' : ''}>${pl ? 'Następny' : 'Next'}</button></div>
-        <p class="aa-chart-selected" role="status">${_esc(row.label)}: <strong>${row.value} ${_esc(model.unit)}</strong></p>
+        <p class="aa-chart-selected" role="status">${_esc(row.label)}: <strong>${_esc(this._chartValueV3(row.value, model.unit))}</strong></p>
         ${state.view === 'data' ? this._chartTableV3(key) : `<div class="canvas-wrap"><canvas id="${canvasId}" role="img" aria-label="${_esc(model.title)}. ${pl ? 'Wartości dostępne w widoku Dane i wyborze punktu.' : 'Values available in Data view and point selector.'}"></canvas></div>`}`}
     </section>`;
   }
@@ -4287,7 +4297,7 @@ ${styles}
           }
         },
         scales: {
-          x: { display: true, beginAtZero: true, ticks: { color: colors.secondary, font: { size: 11 } }, grid: { display: false }, border: { display: false } },
+          x: { display: true, beginAtZero: true, ticks: { color: colors.secondary, font: { size: 12 } }, grid: { display: false }, border: { display: false } },
           y: { display: true, ticks: { color: colors.secondary, font: { size: 12 } }, grid: { display: false }, border: { display: false } }
         }
       }
@@ -4327,8 +4337,8 @@ ${styles}
           tooltip: { backgroundColor: "rgba(30,41,59,0.9)", titleColor: "#fff", bodyColor: "#fff", padding: 8, displayColors: false }
         },
         scales: {
-          y: { display: true, beginAtZero: true, ticks: { color: colors.secondary, font: { size: 11 }, stepSize: 1 }, grid: { color: "rgba(0,0,0,0.05)" }, border: { display: false } },
-          x: { display: true, ticks: { color: colors.secondary, font: { size: 11 } }, grid: { display: false }, border: { display: false } }
+          y: { display: true, beginAtZero: true, ticks: { color: colors.secondary, font: { size: 12 }, stepSize: 1 }, grid: { color: "rgba(0,0,0,0.05)" }, border: { display: false } },
+          x: { display: true, ticks: { color: colors.secondary, font: { size: 12 } }, grid: { display: false }, border: { display: false } }
         }
       }
     });
@@ -4364,7 +4374,7 @@ ${styles}
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: "bottom", labels: { color: colors.secondary, font: { size: 11 }, padding: 12, usePointStyle: true } },
+          legend: { position: "bottom", labels: { color: colors.secondary, font: { size: 12 }, padding: 12, usePointStyle: true } },
           tooltip: { backgroundColor: "rgba(30,41,59,0.9)", titleColor: "#fff", bodyColor: "#fff", padding: 8, callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed}` } }
         }
       }
@@ -4412,8 +4422,8 @@ ${styles}
           tooltip: { backgroundColor: "rgba(30,41,59,0.9)", titleColor: "#fff", bodyColor: "#fff", padding: 8, displayColors: false }
         },
         scales: {
-          y: { display: true, beginAtZero: true, ticks: { color: colors.secondary, font: { size: 11 }, stepSize: 1 }, grid: { color: "rgba(0,0,0,0.04)" }, border: { display: false } },
-          x: { display: true, ticks: { color: colors.secondary, font: { size: 10 } }, grid: { display: false }, border: { display: false } }
+          y: { display: true, beginAtZero: true, ticks: { color: colors.secondary, font: { size: 12 }, stepSize: 1 }, grid: { color: "rgba(0,0,0,0.04)" }, border: { display: false } },
+          x: { display: true, ticks: { color: colors.secondary, font: { size: 12 }, maxTicksLimit: 7, callback: (_value, index) => { const date = rows[index]?.id; return date ? date.slice(8) + '.' + date.slice(5, 7) : ''; } }, grid: { display: false }, border: { display: false } }
         }
       }
     });
