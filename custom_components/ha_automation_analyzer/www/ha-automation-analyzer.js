@@ -4272,6 +4272,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       } else if (this._timelineData?.empty) {
         const lastTriggered = this._timelineData.stats?.lastTriggered;
         timelineBody = `<div class="empty-state" style="text-align:left;padding:20px">
+          <div>${createUiV3({ language: this._lang }).statusHtml('no_data')}</div>
           ${lastTriggered ? `<div style="margin-bottom:8px;font-size:13px;color:var(--bento-text)">${_esc(this._t.timelineLastTriggered)}: ${_esc(this._formatTimeSince(lastTriggered))}</div>` : ''}
           <div>${_esc(this._t.timelineNoTrace)}</div>
         </div><div class="tl-tip">${_esc(this._t.timelineTracingTip)}</div>`;
@@ -4300,7 +4301,9 @@ class HAAutomationAnalyzer extends HTMLElement {
           <div class="tl-meta-row">
             ${statusBadge}
             ${startDate && Number.isFinite(startDate.getTime()) ? `<span>${_esc(startDate.toLocaleString(this._lang === 'pl' ? 'pl-PL' : 'en-US'))}</span>` : ''}
-            ${totalDuration !== null ? `<span>${totalDuration}ms total</span>` : `<span>${this._lang === 'pl' ? 'w toku' : 'running'}</span>`}
+            ${totalDuration !== null ? `<span>${totalDuration}ms ${this._lang === 'pl' ? 'łącznie' : 'total'}</span>`
+              : `<span>${trace.run_state === 'running' ? (this._lang === 'pl' ? 'w toku' : 'running')
+                : (this._lang === 'pl' ? 'Nie zmierzono' : 'Not measured')}</span>`}
           </div>
           ${stepsHtml ? `<div class="tl-list">${stepsHtml}</div>` : `<div class="empty-state">${this._t.timelineNoTrace}</div>`}`;
       } else {
