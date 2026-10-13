@@ -96,7 +96,7 @@ test('legacy retained runs use HA calendar dates through the 25-hour day', async
   const stamps = ['2026-10-24T21:59Z', '2026-10-24T22:00Z', '2026-10-25T00:30Z', '2026-10-25T01:30Z', '2026-10-25T22:58Z'];
   const traces = stamps.map((stamp, i) => ({ domain: 'automation', item_id: 'measured', run_id: 'run-' + i,
     state: 'stopped', script_execution: 'finished', last_step: 'action/0',
-    timestamp: { start: stamp, finish: new Date(Date.parse(stamp) + 1000).toISOString() } }));
+    timestamp: { start: new Date(Date.parse(stamp)).toISOString(), finish: new Date(Date.parse(stamp) + 1000).toISOString() } }));
   const f = await fixture(t, { server: false, traces, zone: 'Europe/Warsaw', now: '2026-10-25T22:59Z' });
   assert.equal(f.card.automationStats.get('automation.measured').todayCount, 4);
   control(f, 'sparkline', 'data').click();
