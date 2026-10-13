@@ -104,3 +104,24 @@ test('legacy retained runs use HA calendar dates through the 25-hour day', async
   assert.equal(model.rows.find(r => r.id === '2026-10-25').value, 4);
   assert.equal(model.rows.find(r => r.id === '2026-10-24').value, 1);
 });
+
+test('canvas labels use the host theme tokens rather than a light document root', async t => {
+  const f = await fixture(t, { load: false });
+  f.card.style.setProperty('--secondary-text-color', '#b3c4d5');
+  f.card.style.setProperty('--card-background-color', '#152535');
+  const colors = f.card._getComputedColors();
+  assert.equal(colors.secondary, '#b3c4d5');
+  assert.equal(colors.cardBg, '#152535');
+});
+test('an unavailable HA timezone is identified as a UTC fallback', async t => {
+  const f = await fixture(t, { zone: 'unknown/invalid' });
+  assert.equal(f.card._aaChartModelsV3.sparkline.timezone, 'UTC');
+  assert.match(f.card.shadowRoot.querySelector('[data-aa-chart="sparkline"]').textContent, /HA timezone unavailable/);
+});
+test('canvas fallback retains exact rows and the unavailable explanation', async t => {
+  const f = await fixture(t);
+  await f.card._drawCharts();
+  assert.equal(f.card.shadowRoot.querySelector('[data-aa-chart="exec-dist"] canvas'), null);
+  assert.match(f.card.shadowRoot.querySelector('[data-aa-chart="exec-dist"] .chart-unavailable').textContent, /Chart unavailable/);
+  assert.deepEqual(dataRows(f, 'exec-dist'), plain(f.card._aaChartModelsV3['exec-dist'].rows.map(r => [r.id, String(r.value)])));
+});
