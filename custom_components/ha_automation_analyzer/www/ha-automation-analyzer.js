@@ -1675,6 +1675,8 @@ const _AA_CONTROL_CSS = `
 }
 .intro-banner { padding-right:68px !important; }
 .auto-item,.auto-item-full { min-height:44px; }
+.auto-item { flex-wrap:wrap; }
+.auto-item .auto-name { flex:1 1 160px;max-width:100%;white-space:normal;overflow-wrap:anywhere; }
 .tl-control-group { min-width:0;max-width:100%; }
 .tl-select-bar select { width:100%; }
 .trace-stats-control { flex-wrap:wrap; }
@@ -2562,7 +2564,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         const aTime = a.lastTriggered ? a.lastTriggered.getTime() : 0;
         const bTime = b.lastTriggered ? b.lastTriggered.getTime() : 0;
         return aTime - bTime;
-      }).slice(0, 10);
+      });
   }
 
   getExecutionDistribution() {
@@ -2586,12 +2588,11 @@ class HAAutomationAnalyzer extends HTMLElement {
   getOptimizationData() {
     const slow = Array.from(this.automationStats.values())
       .filter(a => typeof a.avgExecutionTime === "number" && a.avgExecutionTime > 800)
-      .sort((a, b) => b.avgExecutionTime - a.avgExecutionTime)
-      .slice(0, 10);
+      .sort((a, b) => b.avgExecutionTime - a.avgExecutionTime);
     const failed = Array.from(this.failedAutomations.entries())
       .map(([id, data]) => ({ id, ...data }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    const disabled = this.disabledAutomations.slice(0, 15);
+    const disabled = this.disabledAutomations.slice();
     const stale = this.getStaleAutomations();
     return { slow, failed, disabled, stale };
   }
