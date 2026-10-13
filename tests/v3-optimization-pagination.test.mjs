@@ -42,7 +42,12 @@ for (const state of ['off', 'on']) {
         assert.equal(pagination.querySelector('.pagination-info').textContent, `${page} / 3 (21)`);
         const rows = pagination.previousElementSibling.querySelectorAll('.auto-item');
         seen.push(...Array.from(rows, row => row.dataset.automationId));
-        if (page < 3) next.click();
+        if (page < 3) {
+          next.focus(); next.click();
+          const active = card.shadowRoot.activeElement;
+          assert.ok(active, 'focus stays in the replaced pagination');
+          assert.equal(active.dataset.pageTab, tab);
+        }
         else assert.equal(next.disabled, true);
       }
       assert.equal(seen.length, 21);
