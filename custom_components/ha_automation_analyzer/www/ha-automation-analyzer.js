@@ -2881,7 +2881,7 @@ class HAAutomationAnalyzer extends HTMLElement {
   _chartFallbackV3(key) {
     const section = Array.from(this.shadowRoot.querySelectorAll('[data-aa-chart]')).find(node => node.dataset.aaChart === key);
     const wrap = section?.querySelector('.canvas-wrap');
-    if (wrap) { wrap.classList.remove('canvas-wrap'); wrap.innerHTML = `<p>${this._lang === 'pl' ? 'Wykres niedostępny. Dokładne dane:' : 'Chart unavailable. Exact data:'}</p>${this._chartTableV3(key)}`; }
+    if (wrap) { wrap.classList.remove('canvas-wrap'); wrap.classList.add('chart-unavailable-wrap'); section.classList.add('chart-unavailable-card'); wrap.innerHTML = `<p class="chart-unavailable" role="status">${this._lang === 'pl' ? 'Wykres niedostępny. Dokładne dane:' : 'Chart unavailable. Exact data:'}</p>${this._chartTableV3(key)}`; }
   }
 
   _chartContextV3(key, id) {

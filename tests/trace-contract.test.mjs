@@ -777,7 +777,13 @@ test('trace-derived health fields remain explicitly unknown until an administrat
 });
 
 test('explicit normalized trace statistics drive retained counts, timings, and failures then restore cleanly', { concurrency: false }, async t => {
-  const shell = createShell();
+  const shell = createShell({ beforeLoad(window) {
+    const NativeDate = window.Date;
+    window.Date = class extends NativeDate {
+      constructor(...args) { super(...(args.length ? args : ['2026-08-31T10:00:00.000Z'])); }
+      static now() { return NativeDate.parse('2026-08-31T10:00:00.000Z'); }
+    };
+  } });
   t.after(() => shell.dispose());
   shell.startCase();
   const finished = fixture('trace-v1.json');
