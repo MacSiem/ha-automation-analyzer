@@ -18,7 +18,7 @@ for (const language of ['en', 'pl']) {
     const cases = [
       { name: 'running', state: 'running', outcome: null, duration: null, expected: 'unconfirmed' },
       { name: 'running-finished', state: 'running', outcome: 'finished', duration: null, expected: 'unconfirmed' },
-      { name: 'stopped-missing', state: 'stopped', outcome: null, duration: null, expected: 'unconfirmed' },
+      { name: 'stopped-missing', state: 'stopped', outcome: null, duration: null, malformed: true, expected: 'error' },
       { name: 'success', state: 'stopped', outcome: 'finished', duration: 100, expected: 'success' },
       { name: 'zero', state: 'stopped', outcome: 'finished', duration: 0, expected: 'success' },
       { name: 'null', state: 'stopped', outcome: null, duration: 100, expected: 'unconfirmed' },
@@ -47,22 +47,26 @@ for (const language of ['en', 'pl']) {
       const card = shell.mount(hass, { auto_refresh: false });
       await loaded(card);
       card.setActiveTab('timeline');
-      await waitFor(() => !card._timelineLoading && card._timelineData?.capability?.status === 'available', scenario.name);
+      await waitFor(() => !card._timelineLoading && (scenario.malformed
+        ? card._timelineError === 'malformed' : card._timelineData?.capability?.status === 'available'), scenario.name);
       await flushTurns();
-      const badge = card.shadowRoot.querySelector('.tl-meta-row [data-result-state], .empty-state [data-result-state]');
+      const badge = card.shadowRoot.querySelector('.tl-meta-row [data-result-state], .empty-state [data-result-state], .tl-inline-err [data-result-state]');
       assert.ok(badge, scenario.name);
       assert.equal(badge.dataset.resultState, scenario.expected, scenario.name);
       assert.equal(badge.textContent.trim(), labels[language][scenario.expected]);
       assert.equal(badge.classList.contains('ht-result-state--success'), scenario.expected === 'success');
       assert.equal(card.shadowRoot.querySelector('.tl-meta-badge.ok'), null);
-      if (scenario.nonExecution) {
+      if (scenario.malformed) {
+        assert.equal(card._timelineData, null);
+        assert.equal(hass.__calls.filter(call => call.payload?.type === 'trace/get').length, 0);
+      } else if (scenario.nonExecution) {
         assert.equal(card._timelineData.empty, true);
         assert.equal(card._timelineData.trace, undefined);
         assert.equal(hass.__calls.filter(call => call.payload?.type === 'trace/list').length, 1);
         assert.equal(hass.__calls.filter(call => call.payload?.type === 'trace/get').length, 0, 'non-executions remain excluded from trace requests');
       } else assert.equal(card._timelineData.trace.run_duration_ms, scenario.duration);
       const meta = card.shadowRoot.querySelector('.tl-meta-row')?.textContent || '';
-      if (scenario.duration === null) {
+      if (scenario.duration === null && !scenario.malformed) {
         assert.doesNotMatch(meta, /\b0ms/);
         assert.match(meta, scenario.state === 'running'
           ? language === 'pl' ? /w toku/ : /running/
@@ -77,7 +81,7 @@ for (const language of ['en', 'pl']) {
           { ...original, finished_at: null }, { ...original, run_duration_ms: null }]) {
           card._timelineData.summary = replacement;
           card.render();
-          assert.equal(card.shadowRoot.querySelector('.tl-meta-row [data-result-state], .empty-state [data-result-state]').dataset.resultState, 'unconfirmed');
+          assert.equal(card.shadowRoot.querySelector('.tl-meta-row [data-result-state], .empty-state [data-result-state], .tl-inline-err [data-result-state]').dataset.resultState, 'unconfirmed');
         }
         card._timelineData.summary = original;
         card.render();
@@ -85,7 +89,7 @@ for (const language of ['en', 'pl']) {
       const before = hass.__calls.length;
       const nextLanguage = language === 'en' ? 'pl' : 'en';
       card.hass = { ...hass, language: nextLanguage };
-      assert.equal(card.shadowRoot.querySelector('.tl-meta-row [data-result-state], .empty-state [data-result-state]').textContent.trim(), labels[nextLanguage][scenario.expected]);
+      assert.equal(card.shadowRoot.querySelector('.tl-meta-row [data-result-state], .empty-state [data-result-state], .tl-inline-err [data-result-state]').textContent.trim(), labels[nextLanguage][scenario.expected]);
       assert.equal(hass.__calls.length, before, 'locale change uses retained data');
       card.remove();
     }
