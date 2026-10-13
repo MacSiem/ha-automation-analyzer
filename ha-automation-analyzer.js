@@ -2,6 +2,11 @@
 (function() {
 'use strict';
 
+// BEGIN HA TOOLS UI V3
+// END HA TOOLS UI V3
+// BEGIN HA TOOLS EXPORT V3
+// END HA TOOLS EXPORT V3
+
 /* BEGIN LOCAL CHART.JS */
 /*
 The MIT License (MIT)
@@ -1421,6 +1426,22 @@ class HAAutomationAnalyzer extends HTMLElement {
     this._configCache = new Map();
     this._configCacheAt = 0;
     this._configAccess = 'unknown';
+    this._diagnosticRevisionV3 = 0;
+    this._diagnosticPartsV3 = null;
+    this._diagnosticDialogV3 = null;
+    this._diagnosticBlockedCapabilityV3 = null;
+    this._diagnosticBrowserOnlineV3 = navigator.onLine !== false;
+    this._diagnosticConnectionOnlineV3 = true;
+    this._diagnosticEventConnectionV3 = null;
+    this._diagnosticNetworkHandlerV3 = event => {
+      if (event.type === 'offline') this._diagnosticBrowserOnlineV3 = false;
+      if (event.type === 'online') this._diagnosticBrowserOnlineV3 = true;
+      if (event.type === 'disconnected') this._diagnosticConnectionOnlineV3 = false;
+      if (event.type === 'ready') this._diagnosticConnectionOnlineV3 = true;
+      // Reconnection alone never confirms an old retained trace.
+      this._diagnosticBlockedCapabilityV3 = this._timelineData?.capability || null;
+      this._syncDiagnosticContextV3();
+    };
     // panel_custom supplies hass directly, so initialize the same defaults as Lovelace.
     this.setConfig({});
   }
@@ -1503,6 +1524,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       || this._timelineError || this._selectedTimelineId
     );
     this._hass = hass;
+    this._listenDiagnosticConnectionV3(hass?.connection);
     if (traceSnapshotChanged || traceTimezoneChanged) this._invalidateTraceStatistics();
     this._lastTraceTimezoneV3 = nextTraceTimezone;
     this._lastHassConnection = nextConnection;
@@ -1562,6 +1584,10 @@ class HAAutomationAnalyzer extends HTMLElement {
   get hass() { return this._hass; }
 
   connectedCallback() {
+    window.addEventListener('offline', this._diagnosticNetworkHandlerV3);
+    window.addEventListener('online', this._diagnosticNetworkHandlerV3);
+    this._diagnosticBrowserOnlineV3 = navigator.onLine !== false;
+    this._listenDiagnosticConnectionV3(this._hass?.connection);
     this._lifecycleEpoch += 1;
     const epoch = this._lifecycleEpoch;
     this._activeLoadToken = null;
@@ -2484,14 +2510,93 @@ class HAAutomationAnalyzer extends HTMLElement {
     }
   }
 
-  _exportTimelineDiagnostic() {
+  _listenDiagnosticConnectionV3(connection) {
+    if (connection === this._diagnosticEventConnectionV3) return;
+    for (const type of ['ready', 'disconnected']) this._diagnosticEventConnectionV3?.removeEventListener?.(type, this._diagnosticNetworkHandlerV3);
+    this._diagnosticEventConnectionV3 = connection || null;
+    this._diagnosticConnectionOnlineV3 = connection?.connected !== false;
+    for (const type of ['ready', 'disconnected']) connection?.addEventListener?.(type, this._diagnosticNetworkHandlerV3);
+  }
+
+  _syncDiagnosticContextV3(notify = true) {
+    const hass = this._hass;
+    const connected = this.isConnected && !!hass && navigator.onLine !== false
+      && this._diagnosticBrowserOnlineV3 && this._diagnosticConnectionOnlineV3
+      && hass.connection?.connected !== false && hass.connection?.socket?.readyState !== 3;
+    const parts = [hass?.connection, hass?.user?.id, hass?.user?.is_admin, this._sessionGeneration,
+      this._timelineData?.capability, this._timelineComparison, this._timelineSelectedRunId,
+      this._timelineLoading, this._timelineCompareLoading, connected, this._lang, this._diagnosticBlockedCapabilityV3];
+    if (!this._diagnosticPartsV3 || parts.some((value, i) => value !== this._diagnosticPartsV3[i])) {
+      this._diagnosticPartsV3 = parts;
+      this._diagnosticRevisionV3++;
+      if (notify) this._diagnosticDialogV3?.contextChanged();
+    }
+    return connected;
+  }
+
+  _diagnosticContextV3() {
+    const connected = this._syncDiagnosticContextV3(false);
     const capability = this._timelineData?.capability;
-    if (capability?.status !== 'available') return;
-    const diagnostic = _aaBuildDiagnostic({
-      capability,
-      comparison: this._timelineComparison?.status === 'available' ? this._timelineComparison : null
+    return {
+      role: this._hass?.user?.is_admin === true ? 'admin' : 'not-admin',
+      userId: this._hass?.user?.id || 'unknown',
+      connectionId: 'analyzer-session-' + this._sessionGeneration,
+      datasetId: 'normalized-timeline-diagnostic', revision: this._diagnosticRevisionV3,
+      connected, canExport: this._hass?.user?.is_admin === true && !!this._hass?.user?.id,
+      sourceConfirmed: !!capability && capability !== this._diagnosticBlockedCapabilityV3
+        && !this._timelineLoading && !this._timelineCompareLoading && _aaIsDiagnosticTraceCapability(capability)
+    };
+  }
+
+  _diagnosticPayloadV3() {
+    const context = this._diagnosticContextV3();
+    if (!context.connected || !context.canExport || !context.sourceConfirmed) return { status: 'no_data', serialized: '' };
+    const diagnostic = _aaBuildDiagnostic({ capability: this._timelineData.capability,
+      comparison: this._timelineComparison?.status === 'available' ? this._timelineComparison : null,
+      generatedAt: this._timelineData.capability.observed_at });
+    if (diagnostic.status === 'unavailable') return { status: 'no_data', serialized: '' };
+    const pl = this._lang === 'pl';
+    const included = [pl ? 'Anonimowy stan wykonania, zmierzone czasy i ścieżki kroków' : 'Anonymous run state, measured times and step paths',
+      pl ? 'Dostępne porównanie dwóch wybranych tras' : 'Available comparison of two selected traces'];
+    const excluded = [pl ? 'Identyfikatory i nazwy automatyzacji, tras, osób oraz urządzeń' : 'Automation, run, person and device IDs and names',
+      pl ? 'Tokeny, użytkownicy, adresy, zmienne, komunikaty i surowa konfiguracja' : 'Tokens, users, addresses, variables, messages and raw configuration'];
+    const sourceLimit = pl ? 'Tylko zachowane kroki wybranej trasy. Retencja HA może pomijać historię; brak czasu pozostaje null. Ten raport zawsze pomija pola identyfikujące, również po zaznaczeniu opcji prywatnych.'
+      : 'Only retained steps of the selected trace. HA retention may omit history; missing duration stays null. This report always excludes identifying fields, including when private fields are requested.';
+    const status = diagnostic.run.duration_ms === null || diagnostic.run.state === 'running' ? 'partial' : 'success';
+    const payload = { ...diagnostic, status, included, excluded, sourceLimit };
+    return { serialized: JSON.stringify(payload, null, 2) + '\n', status, confirmed: true, sourceConfirmed: true, included, excluded, sourceLimit };
+  }
+
+  _exportTimelineDiagnostic() {
+    if (!this._diagnosticDialogV3) this._diagnosticDialogV3 = createExportDialog({
+      root: this.shadowRoot, getLanguage: () => this._lang, getContext: () => this._diagnosticContextV3(), createUiV3,
+      policy: { id: 'analyzer-normalized-diagnostic-v1',
+        allowlistedFields: ['schema', 'generated_at', 'capability', 'run.alias', 'run.state', 'run.kind', 'run.duration_ms', 'run.nodes.path', 'run.nodes.ordinal', 'run.nodes.status', 'run.nodes.offset_ms', 'comparison.run.classification', 'comparison.run.delta_ms', 'comparison.nodes', 'status', 'included', 'excluded', 'sourceLimit'],
+        neverInclude: ['tokens', 'users', 'addresses', 'raw_config', 'run_id', 'item_id', 'names', 'variables', 'messages'] },
+      formats: ['json'], defaultFormat: 'json', defaultFilename: 'ha-automation-analyzer-diagnostic.json',
+      buildPayload: () => this._diagnosticPayloadV3(),
+      performDownload: ({ blob, filename, context, signal }) => {
+        const current = this._diagnosticContextV3();
+        if (signal.aborted || !current.connected || !current.canExport || !current.sourceConfirmed
+          || ['role', 'userId', 'connectionId', 'datasetId', 'revision'].some(key => context[key] !== current[key])) return { outcome: 'unknown' };
+        const url = URL.createObjectURL(blob), anchor = this.ownerDocument.createElement('a');
+        anchor.href = url; anchor.download = filename; anchor.rel = 'noopener';
+        try { anchor.click(); } finally { URL.revokeObjectURL(url); }
+        return { outcome: 'initiated' };
+      }
     });
-    _aaDownloadDiagnostic(diagnostic);
+    const owner = this;
+    this._diagnosticDialogV3.open({ opener: {
+      get isConnected() { return owner.isConnected; },
+      focus() { owner.shadowRoot.getElementById('tl-export-btn')?.focus({ preventScroll: true }); }
+    } });
+    const container = this.shadowRoot.querySelector('[data-ha-tools-export]');
+    if (container) {
+      const colors = this._getComputedColors(), dark = this.classList.contains('bento-dark');
+      container.style.setProperty('--card-background-color', colors.cardBg);
+      container.style.setProperty('--primary-text-color', dark ? '#e2e8f0' : '#1e293b');
+      container.style.setProperty('--secondary-text-color', colors.secondary);
+    }
   }
 
   _isTraceStatsActive(token) {
@@ -2913,6 +3018,13 @@ class HAAutomationAnalyzer extends HTMLElement {
     const chartFocus = focusedControl?.dataset.aaChartControl ? {
       key: focusedControl.closest('[data-aa-chart]')?.dataset.aaChart, control: focusedControl.dataset.aaChartControl
     } : null;
+    this._syncDiagnosticContextV3();
+    const exportContainer = this.shadowRoot.querySelector('[data-ha-tools-export]');
+    const exportFocus = exportContainer?.shadowRoot?.activeElement;
+    const exportSelection = exportFocus?.tagName === 'INPUT' && exportFocus.type === 'text'
+      ? [exportFocus.selectionStart, exportFocus.selectionEnd, exportFocus.selectionDirection] : null;
+    // Preserve the live dialog and its frozen bytes while the underlying card repaints.
+    exportContainer?.remove();
     this._buildChartModelsV3();
     const focusedTab = this.shadowRoot.activeElement?.matches('.tab-btn')
       ? this.shadowRoot.activeElement.dataset.tab : null;
@@ -3990,6 +4102,11 @@ ${styles}
       ${this._hass?.user?.is_admin === true && this.config?.show_support !== false && !_localSupportDismissed() ? _renderLocalSupport(this._lang) : ''}
     `;
 
+    if (exportContainer) {
+      this.shadowRoot.append(exportContainer);
+      exportFocus?.focus({ preventScroll: true });
+      if (exportSelection) exportFocus.setSelectionRange(...exportSelection);
+    }
     _bindLocalIntroDismiss(this.shadowRoot);
     _bindLocalSupportDismiss(this.shadowRoot);
     this._setupEventListeners();
@@ -4451,6 +4568,13 @@ ${styles}
   }
 
   disconnectedCallback() {
+    this._diagnosticDialogV3?.destroy();
+    this._diagnosticDialogV3 = null;
+    window.removeEventListener('offline', this._diagnosticNetworkHandlerV3);
+    window.removeEventListener('online', this._diagnosticNetworkHandlerV3);
+    this._listenDiagnosticConnectionV3(null);
+    this._diagnosticPartsV3 = null;
+    this._diagnosticBlockedCapabilityV3 = null;
     this._lifecycleEpoch += 1;
     this._invalidateTraceStatistics();
     this._activeLoadToken = null;
