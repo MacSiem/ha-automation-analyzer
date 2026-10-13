@@ -125,3 +125,18 @@ test('canvas fallback retains exact rows and the unavailable explanation', async
   assert.match(f.card.shadowRoot.querySelector('[data-aa-chart="exec-dist"] .chart-unavailable').textContent, /Chart unavailable/);
   assert.deepEqual(dataRows(f, 'exec-dist'), plain(f.card._aaChartModelsV3['exec-dist'].rows.map(r => [r.id, String(r.value)])));
 });
+
+test('manual retry after an empty snapshot reads fresh data instead of the empty cache', async t => {
+  let reads = 0;
+  const f = await fixture(t, { load: false, provider: () => {
+    reads++;
+    return reads === 1 ? { ...summary(), run_count: 0, execution_count: 0, by_automation: {}, durations_ms: [], daily_counts: summary().daily_counts.map(row => ({ ...row, count: 0 })) } : summary();
+  } });
+  f.card.shadowRoot.querySelector('#trace-stats-load').click();
+  await waitFor(() => !f.card._traceStatsLoading && f.card._traceStatsCapability?.status === 'no_data', 'empty source snapshot');
+  f.card.shadowRoot.querySelector('#trace-stats-load').click();
+  await flushTurns();
+  assert.equal(reads, 2);
+  await waitFor(() => !f.card._traceStatsLoading && f.card._traceStatsCapability?.status === 'available', 'fresh source after explicit retry');
+  assert.equal(f.card._aaChartModelsV3['exec-dist'].measuredCount, 5);
+});
