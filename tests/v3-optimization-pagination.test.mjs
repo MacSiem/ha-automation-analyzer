@@ -20,7 +20,7 @@ for (const state of ['off', 'on']) {
       assert.equal(request.type, 'ha_automation_analyzer/summary');
       return { schema: 'aa-trace-summary-v1', run_count: 21, execution_count: 21,
         by_automation: Object.fromEntries(ids.map(id => [id, { trace_count: 1, today_count: 1, error_count: 0, avg_execution_ms: 1000 }])),
-        daily_counts: [{ date: '2026-08-31', count: 21 }], durations_ms: Array(21).fill(1000) };
+        daily_counts: Array.from({ length: 14 }, (_, i) => ({ date: `2026-08-${18 + i}`, count: i === 13 ? 21 : 0 })), durations_ms: Array(21).fill(1000) };
     };
     const card = shell.mount(hass, { auto_refresh: false, show_support: false });
     await waitFor(() => !card._loadingInProgress && card.automationStats.size === 21, 'all configurations');
