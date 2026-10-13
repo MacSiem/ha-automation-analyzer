@@ -1464,6 +1464,8 @@ class HAAutomationAnalyzer extends HTMLElement {
     const previousLanguage = this._lang;
     if (hass?.language) this._lang = hass.language.startsWith('pl') ? 'pl' : 'en';
     const languageChanged = previousLanguage !== this._lang;
+    const nextTraceTimezone = this._aaCalendarZoneV3(hass);
+    const traceTimezoneChanged = this._lastTraceTimezoneV3 !== nextTraceTimezone;
     const previousHass = this._hass;
     const hassChanged = previousHass !== hass;
     const nextConnection = hass?.connection || null;
@@ -1501,7 +1503,8 @@ class HAAutomationAnalyzer extends HTMLElement {
       || this._timelineError || this._selectedTimelineId
     );
     this._hass = hass;
-    if (traceSnapshotChanged) this._invalidateTraceStatistics();
+    if (traceSnapshotChanged || traceTimezoneChanged) this._invalidateTraceStatistics();
+    this._lastTraceTimezoneV3 = nextTraceTimezone;
     this._lastHassConnection = nextConnection;
     this._lastTraceRole = nextRole;
     this._lastTraceUserId = nextUserId;
@@ -1518,7 +1521,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       timelineInvalidated = true;
     }
     if (!hass || !this.isConnected) return;
-    if (timelineInvalidated || traceSnapshotChanged || languageChanged) this._rerenderContent();
+    if (timelineInvalidated || traceSnapshotChanged || traceTimezoneChanged || languageChanged) this._rerenderContent();
     if (hassChanged && traceSnapshotChanged && this._loadingInProgress) {
       this._activeLoadToken = null;
       this._pendingLoad = true;
@@ -2492,6 +2495,7 @@ class HAAutomationAnalyzer extends HTMLElement {
 
   _isTraceStatsActive(token) {
     return Boolean(token) && this._activeTraceStatsToken === token
+      && token.timezone === this._aaCalendarZoneV3()
       && this._isLifecycleActive(token.epoch, token.hass, token.generation);
   }
 
@@ -2502,6 +2506,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     this._activeTraceStatsToken = null;
     this._traceStatsCapability = null;
     this._traceStatsCache = null;
+    this._traceStatsTimezoneV3 = null;
     this._traceStatsLoading = false;
   }
 
@@ -2576,9 +2581,8 @@ class HAAutomationAnalyzer extends HTMLElement {
       groups.get(run.item_id).push(run);
     }
     const durations = [];
-    const now = new Date(Date.now());
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const endOfDay = startOfDay + 24 * 60 * 60 * 1000;
+    const zone = this._traceStatsTimezoneV3 || this._aaCalendarZoneV3();
+    const today = this._aaDayKeyV3(capability.observed_at, zone);
     this.failedAutomations.clear();
     for (const stats of this.automationStats.values()) {
       const runs = groups.get(stats.automationId) || [];
@@ -2587,7 +2591,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       stats.traceCount = runs.length;
       stats.todayCount = runs.filter(run => {
         const startedAt = _aaParseTimestamp(run.started_at);
-        return startedAt !== null && startedAt >= startOfDay && startedAt < endOfDay;
+        return startedAt !== null && this._aaDayKeyV3(startedAt, zone) === today;
       }).length;
       const errors = runs.filter(run => run.script_execution === 'error').length;
       stats.isFailed = errors > 0;
@@ -2615,7 +2619,9 @@ class HAAutomationAnalyzer extends HTMLElement {
     const cached = this._traceStatsCache;
     if (options.force !== true && cached && cached.generation === this._sessionGeneration && cached.connection === this._hass.connection
       && cached.epoch === this._lifecycleEpoch && cached.signature === signature
+      && cached.timezone === this._aaCalendarZoneV3()
       && now < cached.expiresAt) {
+      this._traceStatsTimezoneV3 = cached.timezone;
       this._traceStatsCapability = cached.capability;
       this._applyTraceStatistics(cached.capability);
       this.render();
@@ -2631,6 +2637,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       generation: this._sessionGeneration,
       connection: this._hass.connection,
       signature,
+      timezone: this._aaCalendarZoneV3(),
       controller: new AbortController()
     };
     this._activeTraceStatsToken = token;
@@ -2644,6 +2651,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         ? await _aaRequestServerSummary({ hass: token.hass, signal: token.controller.signal })
         : await _aaRequestTraceList({ hass: token.hass, global: true, signal: token.controller.signal });
       if (!this._isTraceStatsActive(token)) return;
+      this._traceStatsTimezoneV3 = token.timezone;
       this._traceStatsCapability = capability;
       if (capability.status === 'available' || capability.status === 'no_data') {
         this._traceStatsCache = {
@@ -2652,6 +2660,7 @@ class HAAutomationAnalyzer extends HTMLElement {
           epoch: token.epoch,
           generation: token.generation,
           signature: token.signature,
+          timezone: token.timezone,
           expiresAt: Date.now() + 60000,
           capability
         };
@@ -2755,13 +2764,164 @@ class HAAutomationAnalyzer extends HTMLElement {
     </div>`;
   }
 
+
+  _aaCalendarZoneV3(hass = this._hass) {
+    const zone = hass?.config?.time_zone;
+    try { if (typeof zone === 'string' && zone) { new Intl.DateTimeFormat('en', { timeZone: zone }); return zone; } } catch (_) {}
+    return 'UTC';
+  }
+
+  _aaDayKeyV3(timestamp, zone) {
+    const date = new Date(timestamp);
+    if (!Number.isFinite(date.getTime())) return null;
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+    const value = kind => parts.find(part => part.type === kind)?.value;
+    return `${value('year')}-${value('month')}-${value('day')}`;
+  }
+
+  _buildChartModelsV3() {
+    const pl = this._lang === 'pl';
+    const cap = this._traceStatsCapability;
+    const available = cap?.status === 'available';
+    const summary = available ? cap.data?.summary : null;
+    const runs = available ? (cap.data?.runs || []).filter(run => run.kind === 'execution') : [];
+    const timezone = this._traceStatsTimezoneV3 || this._aaCalendarZoneV3();
+    const executionCount = summary?.execution_count ?? runs.length;
+    const common = { source: available ? cap.source : null, timezone, observed_at: available ? cap.observed_at : null,
+      measuredCount: available ? this.executionTimes.length : 0, executionCount };
+    const make = (title, rows, metadata = {}) => Object.freeze({ ...common, title, unit: pl ? 'wykonania' : 'runs',
+      ...metadata, rows: Object.freeze(rows.map(row => Object.freeze(row))) });
+    const top = available ? this.getTopAutomations(5) : [];
+    const today = top.some(row => row.todayCount > 0);
+    const days = summary ? summary.daily_counts.map(row => ({ id: row.date, label: row.date, value: row.count })) : [];
+    if (available && !summary) {
+      const key = this._aaDayKeyV3(cap.observed_at, timezone);
+      if (key) {
+        const [y, m, d] = key.split('-').map(Number);
+        const counts = new Map();
+        for (const run of runs) { const day = this._aaDayKeyV3(run.started_at, timezone); counts.set(day, (counts.get(day) || 0) + 1); }
+        // Step calendar keys, never milliseconds between local midnights (23/25-hour days).
+        for (let i = 13; i >= 0; i--) {
+          const id = new Date(Date.UTC(y, m - 1, d - i)).toISOString().slice(0, 10);
+          days.push({ id, label: id, value: counts.get(id) || 0 });
+        }
+      }
+    }
+    const models = {
+      'top-auto': make(today ? (pl ? 'Zachowane dziś' : 'Retained today') : (pl ? 'Zachowane uruchomienia' : 'Retained runs'),
+        top.map(row => ({ id: row.id, label: row.name, value: today ? row.todayCount : row.traceCount }))),
+      'exec-dist': make(this._t.executionTimeDistribution, available && this.executionTimes.length
+        ? Object.entries(this.getExecutionDistribution()).map(([id, value]) => ({ id, label: id === '500-1s' ? '500ms–1s' : id, value })) : []),
+      'trigger-type': make(pl ? 'Skonfigurowane wyzwalacze' : 'Configured triggers',
+        this.getTriggerTypeData().map(row => ({ id: row.type, label: row.type, value: row.count })),
+        { source: 'home_assistant.automation_configuration', unit: pl ? 'wyzwalacze' : 'triggers',
+          observed_at: this._configCacheAt ? new Date(this._configCacheAt).toISOString() : null }),
+      sparkline: make(pl ? 'Zachowane wykonania według dnia' : 'Retained runs by day', days)
+    };
+    this._aaChartModelsV3 = Object.freeze(models);
+    this._aaChartViewStates ||= {};
+    for (const [key, model] of Object.entries(models)) {
+      const state = this._aaChartViewStates[key] ||= { view: 'chart', selected: null };
+      if (!model.rows.some(row => row.id === state.selected)) state.selected = model.rows[0]?.id ?? null;
+    }
+  }
+
+  _chartTableV3(key) {
+    const model = this._aaChartModelsV3[key];
+    return `<table class="aa-chart-data"><caption>${_esc(model.title)} · ${_esc(model.unit)}</caption><thead><tr><th scope="col">${this._lang === 'pl' ? 'Punkt' : 'Point'}</th><th scope="col">${this._lang === 'pl' ? 'Liczba' : 'Count'}</th></tr></thead><tbody>${model.rows.map(row =>
+      `<tr data-aa-chart-row="${_esc(row.id)}"><th scope="row">${_esc(row.label)}</th><td data-aa-value>${row.value}</td></tr>`).join('')}</tbody></table>`;
+  }
+
+  _renderMeasuredChartV3(key, canvasId, emptyText) {
+    const pl = this._lang === 'pl', model = this._aaChartModelsV3[key], state = this._aaChartViewStates[key];
+    const row = model.rows.find(item => item.id === state.selected);
+    const index = model.rows.indexOf(row);
+    const isConfig = key === 'trigger-type';
+    const caveat = isConfig ? (pl ? 'Typy odczytane z konfiguracji automatyzacji.' : 'Types read from automation configuration.')
+      : (pl ? 'Zachowane trasy mogą obejmować tylko część historii. Zero oznacza brak wykonań w tym odczycie.' : 'Retained traces may cover only part of the history. Zero means no runs in this snapshot.');
+    return `<section class="card aa-measured-chart" data-aa-chart="${key}" aria-label="${_esc(model.title)}">
+      <h2 class="card-title">${_esc(model.title)}</h2>
+      <p class="aa-chart-caption">${caveat}</p>
+      ${key === 'exec-dist' && model.source ? `<p class="aa-chart-caption">${model.measuredCount}/${model.executionCount} ${pl ? 'wykonań z pomiarem czasu; pozostałe bez pomiaru.' : 'runs with duration measurements; remaining durations unavailable.'}</p>` : ''}
+      <p class="aa-chart-source">${pl ? 'Źródło' : 'Source'}: ${_esc(model.source || '—')}<br>${_esc(model.timezone)} · ${pl ? 'Odczyt' : 'Read'}: ${_esc(model.observed_at || '—')}</p>
+      <div class="aa-chart-controls" role="group" aria-label="${pl ? 'Widok' : 'View'}">
+        <button type="button" data-aa-chart-control="chart" aria-pressed="${state.view === 'chart'}">${pl ? 'Wykres' : 'Chart'}</button>
+        <button type="button" data-aa-chart-control="data" aria-pressed="${state.view === 'data'}">${pl ? 'Dane' : 'Data'}</button>
+      </div>
+      ${!row ? `<div class="chart-empty">${_esc(emptyText)}</div>` : `
+        <label class="aa-chart-point-label">${pl ? 'Wybierz punkt' : 'Select point'}
+          <select data-aa-chart-control="point">${model.rows.map(item => `<option value="${_esc(item.id)}" ${item.id === row.id ? 'selected' : ''}>${_esc(item.label)} · ${item.value} ${_esc(model.unit)}</option>`).join('')}</select>
+        </label>
+        <div class="aa-chart-controls"><button type="button" data-aa-chart-control="previous" ${index === 0 ? 'disabled' : ''}>${pl ? 'Poprzedni' : 'Previous'}</button><button type="button" data-aa-chart-control="next" ${index === model.rows.length - 1 ? 'disabled' : ''}>${pl ? 'Następny' : 'Next'}</button></div>
+        <p class="aa-chart-selected" role="status">${_esc(row.label)}: <strong>${row.value} ${_esc(model.unit)}</strong></p>
+        ${state.view === 'data' ? this._chartTableV3(key) : `<div class="canvas-wrap"><canvas id="${canvasId}" role="img" aria-label="${_esc(model.title)}. ${pl ? 'Wartości dostępne w widoku Dane i wyborze punktu.' : 'Values available in Data view and point selector.'}"></canvas></div>`}`}
+    </section>`;
+  }
+
+  _setupChartControlsV3() {
+    for (const section of this.shadowRoot.querySelectorAll('[data-aa-chart]')) {
+      const key = section.dataset.aaChart;
+      const model = this._aaChartModelsV3[key], state = this._aaChartViewStates[key];
+      const pick = index => { state.selected = model.rows[Math.max(0, Math.min(model.rows.length - 1, index))]?.id ?? null; this.render(); };
+      for (const button of section.querySelectorAll('button[data-aa-chart-control]')) button.addEventListener('click', () => {
+        const action = button.dataset.aaChartControl;
+        if (action === 'chart' || action === 'data') { state.view = action; this.render(); }
+        else pick(model.rows.findIndex(row => row.id === state.selected) + (action === 'next' ? 1 : -1));
+      });
+      const select = section.querySelector('select');
+      select?.addEventListener('change', () => { state.selected = select.value; this.render(); });
+      select?.addEventListener('keydown', event => {
+        const index = model.rows.findIndex(row => row.id === state.selected);
+        const targets = { Home: 0, End: model.rows.length - 1, ArrowLeft: index - 1, ArrowUp: index - 1, ArrowRight: index + 1, ArrowDown: index + 1 };
+        if (Object.hasOwn(targets, event.key)) { event.preventDefault(); pick(targets[event.key]); }
+      });
+    }
+  }
+
+  _chartFallbackV3(key) {
+    const section = Array.from(this.shadowRoot.querySelectorAll('[data-aa-chart]')).find(node => node.dataset.aaChart === key);
+    const wrap = section?.querySelector('.canvas-wrap');
+    if (wrap) { wrap.classList.remove('canvas-wrap'); wrap.innerHTML = `<p>${this._lang === 'pl' ? 'Wykres niedostępny. Dokładne dane:' : 'Chart unavailable. Exact data:'}</p>${this._chartTableV3(key)}`; }
+  }
+
+  _chartContextV3(key, id) {
+    const canvas = this.shadowRoot.getElementById(id);
+    if (!canvas) return null;
+    const context = canvas.getContext('2d');
+    if (!context) this._chartFallbackV3(key);
+    return context;
+  }
+
+  _chartPickV3(key, elements) {
+    const row = this._aaChartModelsV3[key]?.rows[elements?.[0]?.index];
+    if (row) { this._aaChartViewStates[key].selected = row.id; this.render(); }
+  }
+
   render() {
     if (!this._hass || !this.isConnected) return;
+    const focusedControl = this.shadowRoot.activeElement;
+    const chartFocus = focusedControl?.dataset.aaChartControl ? {
+      key: focusedControl.closest('[data-aa-chart]')?.dataset.aaChart, control: focusedControl.dataset.aaChartControl
+    } : null;
+    this._buildChartModelsV3();
     const focusedTab = this.shadowRoot.activeElement?.matches('.tab-btn')
       ? this.shadowRoot.activeElement.dataset.tab : null;
     const styles = `
       
 /* ===== BENTO DESIGN SYSTEM (local fallback) ===== */
+.aa-measured-chart { min-width: 0; overflow-wrap: anywhere; }
+.aa-chart-caption, .aa-chart-source, .aa-chart-selected { font-size: 13px; line-height: 1.5; margin: 8px 0; }
+.aa-chart-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.aa-measured-chart button, .aa-measured-chart select { min-height: 44px; min-width: 44px; max-width: 100%; box-sizing: border-box; font: inherit; color: inherit; border: 1px solid var(--bento-border); border-radius: 8px; background: var(--bento-bg); padding: 8px 12px; }
+.aa-measured-chart button[aria-pressed="true"] { border-color: var(--bento-primary); box-shadow: inset 0 0 0 1px var(--bento-primary); }
+.aa-measured-chart :is(button,select):focus-visible { outline: 2px solid var(--bento-primary); outline-offset: 2px; }
+.aa-chart-point-label { display: grid; gap: 4px; font-size: 13px; }
+.aa-chart-point-label select { width: 100%; }
+.aa-chart-data { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+.aa-chart-data caption { text-align: left; padding: 8px 0; }
+.aa-chart-data th, .aa-chart-data td { padding: 8px 4px; text-align: left; border-bottom: 1px solid var(--bento-border); overflow-wrap: anywhere; }
+.aa-chart-data th:last-child, .aa-chart-data td:last-child { width: 28%; text-align: right; }
+
 
 :host {
   --bento-primary: #3B82F6;
@@ -3405,12 +3565,7 @@ class HAAutomationAnalyzer extends HTMLElement {
           <div class="filter-results-count">${filteredAutos.length} ${this._lang === 'pl' ? 'z' : 'of'} ${allAutos.length} ${this._t.automations}</div>
           <div class="auto-list-full">${filteredListHtml}</div>
         </div>
-        <div class="card ${hasRetainedRunData ? '' : 'chart-empty-card'}">
-          <h2 class="card-title">${this._t.mostActiveTodayTitle}</h2>
-          ${hasRetainedRunData
-            ? '<div class="canvas-wrap"><canvas id="top-automations-chart"></canvas></div>'
-            : `<div class="chart-empty">${this._t.noRetainedActivityData}</div>`}
-        </div>
+        ${this._renderMeasuredChartV3('top-auto', 'top-automations-chart', this._t.noRetainedActivityData)}
       `;
     } else if (this.currentTab === 'performance') {
       const hasExecData = this.executionTimes.length > 0;
@@ -3421,24 +3576,9 @@ class HAAutomationAnalyzer extends HTMLElement {
 
       activeTabContent = `
         ${this._renderTraceStatsControl()}
-        <div class="card ${hasExecData ? '' : 'chart-empty-card'}">
-          <h2 class="card-title">${this._t.executionTimeDistribution}</h2>
-          ${hasExecData
-            ? '<div class="canvas-wrap"><canvas id="exec-dist-chart"></canvas></div>'
-            : `<div class="chart-empty">${this._t.noExecutionTimeData}</div>`}
-        </div>
-        <div class="card ${hasTriggerData ? '' : 'chart-empty-card'}">
-          <h2 class="card-title">${this._t.triggerTypesTitle}</h2>
-          ${hasTriggerData
-            ? '<div class="canvas-wrap"><canvas id="trigger-type-chart"></canvas></div>'
-            : `<div class="chart-empty">${triggerEmptyMessage}</div>`}
-        </div>
-        <div class="card ${hasRetainedRunData ? '' : 'chart-empty-card'}">
-          <h2 class="card-title">${this._t.dailyExecutions}</h2>
-          ${hasRetainedRunData
-            ? '<div class="canvas-wrap"><canvas id="sparkline-chart"></canvas></div>'
-            : `<div class="chart-empty">${this._t.noDailyTraceData}</div>`}
-        </div>
+        ${this._renderMeasuredChartV3('exec-dist', 'exec-dist-chart', this._t.noExecutionTimeData)}
+        ${this._renderMeasuredChartV3('trigger-type', 'trigger-type-chart', triggerEmptyMessage)}
+        ${this._renderMeasuredChartV3('sparkline', 'sparkline-chart', this._t.noDailyTraceData)}
         <div class="card">
           <h2 class="card-title">${this._t.statistics}</h2>
           <div class="stats">
@@ -3844,6 +3984,12 @@ ${styles}
     _bindLocalSupportDismiss(this.shadowRoot);
     this._setupEventListeners();
     this._setupPaginationListeners();
+    this._setupChartControlsV3();
+    if (chartFocus) {
+      const section = Array.from(this.shadowRoot.querySelectorAll('[data-aa-chart]')).find(node => node.dataset.aaChart === chartFocus.key);
+      const control = Array.from(section?.querySelectorAll('[data-aa-chart-control]') || []).find(node => node.dataset.aaChartControl === chartFocus.control);
+      control?.focus({ preventScroll: true });
+    }
     if (focusedTab) {
       const replacement = Array.from(this.shadowRoot.querySelectorAll('.tab-btn'))
         .find(button => button.dataset.tab === focusedTab);
@@ -4072,7 +4218,10 @@ ${styles}
     if (!this.isConnected || this._isLoading) return;
     if (this.currentTab === "optimization") return;
     try {
-      if (!await this._loadChartJS()) return;
+      if (!await this._loadChartJS()) {
+        for (const key of Object.keys(this._aaChartModelsV3 || {})) this._chartFallbackV3(key);
+        return;
+      }
       if (!this.isConnected) return;
       if (this.currentTab === "overview") {
         this._drawTopAutomationsChart();
@@ -4098,18 +4247,16 @@ ${styles}
     if (!canvas || !this._chartJsLoaded || this._traceStatsCapability?.status !== 'available') return;
     this._destroyChart("top-auto");
 
-    const data = this.getTopAutomations(5);
-    if (data.length === 0) return;
-
-    const hasToday = data.some(a => a.todayCount > 0);
-    const labels = data.map(a => a.name.length > 35 ? a.name.substring(0, 33) + "\u2026" : a.name);
-    const values = hasToday ? data.map(a => a.todayCount) : data.map(a => a.traceCount);
-    const chartLabel = hasToday
-      ? (this._lang === 'pl' ? 'Zachowane dzi\u015B' : 'Retained today')
-      : (this._lang === 'pl' ? 'Zachowane uruchomienia' : 'Retained runs');
-
+    const model = this._aaChartModelsV3['top-auto'];
+    const data = model.rows;
+    if (!data.length) return;
+    const labels = data.map(row => row.label.length > 35 ? row.label.slice(0, 33) + '…' : row.label);
+    const values = data.map(row => row.value);
+    const chartLabel = model.title;
     const colors = this._getComputedColors();
-    this._charts["top-auto"] = new AAChart(canvas.getContext("2d"), {
+    const context = this._chartContextV3('top-auto', 'top-automations-chart');
+    if (!context) return;
+    this._charts["top-auto"] = new AAChart(context, {
       type: "bar",
       data: {
         labels,
@@ -4122,6 +4269,7 @@ ${styles}
         }]
       },
       options: {
+        onClick: (_event, elements) => this._chartPickV3('top-auto', elements),
         animation: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? false : undefined,
         indexAxis: "y",
         responsive: true,
@@ -4133,7 +4281,7 @@ ${styles}
             titleColor: "#fff", bodyColor: "#fff",
             padding: 8, displayColors: false,
             callbacks: {
-              title: (ctx) => data[ctx[0].dataIndex]?.name || "",
+              title: (ctx) => data[ctx[0].dataIndex]?.label || "",
               label: (ctx) => `${chartLabel}: ${ctx.parsed.x}`
             }
           }
@@ -4151,23 +4299,26 @@ ${styles}
     if (!canvas || !this._chartJsLoaded) return;
     this._destroyChart("exec-dist");
 
-    const distribution = this.getExecutionDistribution();
+    const rows = this._aaChartModelsV3['exec-dist'].rows;
     const colors = this._getComputedColors();
     const barColors = ["#10B981", "#3B82F6", "#F59E0B", "#EF4444", "#991b1b"];
 
-    this._charts["exec-dist"] = new AAChart(canvas.getContext("2d"), {
+    const context = this._chartContextV3('exec-dist', 'exec-dist-chart');
+    if (!context) return;
+    this._charts["exec-dist"] = new AAChart(context, {
       type: "bar",
       data: {
-        labels: Object.keys(distribution),
+        labels: rows.map(row => row.label),
         datasets: [{
           label: this._t.retainedRuns,
-          data: Object.values(distribution),
+          data: rows.map(row => row.value),
           backgroundColor: barColors,
           borderWidth: 0,
           borderRadius: 4
         }]
       },
       options: {
+        onClick: (_event, elements) => this._chartPickV3('exec-dist', elements),
         animation: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? false : undefined,
         responsive: true,
         maintainAspectRatio: false,
@@ -4188,24 +4339,27 @@ ${styles}
     if (!canvas || !this._chartJsLoaded) return;
     this._destroyChart("trigger-type");
 
-    const data = this.getTriggerTypeData();
+    const data = this._aaChartModelsV3['trigger-type'].rows;
     if (data.length === 0) return;
 
     const palette = ["#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#0EA5E9","#14B8A6","#F97316"];
     const colors = this._getComputedColors();
 
-    this._charts["trigger-type"] = new AAChart(canvas.getContext("2d"), {
+    const context = this._chartContextV3('trigger-type', 'trigger-type-chart');
+    if (!context) return;
+    this._charts["trigger-type"] = new AAChart(context, {
       type: "doughnut",
       data: {
-        labels: data.map(d => d.type),
+        labels: data.map(d => d.label),
         datasets: [{
-          data: data.map(d => d.count),
+          data: data.map(d => d.value),
           backgroundColor: palette.slice(0, data.length),
           borderColor: colors.cardBg,
           borderWidth: 2
         }]
       },
       options: {
+        onClick: (_event, elements) => this._chartPickV3('trigger-type', elements),
         animation: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? false : undefined,
         responsive: true,
         maintainAspectRatio: false,
@@ -4219,39 +4373,17 @@ ${styles}
 
   _drawSparklineChart() {
     const canvas = this.shadowRoot.getElementById("sparkline-chart");
-    const data = this._traceStatsCapability?.status === 'available'
-      ? this._traceStatsCapability.data : null;
-    const runs = data?.runs;
-    const summaryDays = data?.summary?.daily_counts;
-    if (!canvas || !this._chartJsLoaded || (!Array.isArray(runs) && !Array.isArray(summaryDays))) return;
-    this._destroyChart("sparkline");
-
-    const now = new Date(Date.now());
-    const dailyData = Array.isArray(summaryDays) ? summaryDays.map(row => row.count) : [];
-
-    // Count only normalized execution summaries retained by Home Assistant.
-    for (let i = 13; !Array.isArray(summaryDays) && i >= 0; i--) {
-      const day = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
-      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-      const dayCount = runs.filter(run => {
-        if (run.kind !== 'execution') return false;
-        const timestamp = _aaParseTimestamp(run.started_at);
-        return timestamp !== null && timestamp >= dayStart.getTime() && timestamp < dayEnd.getTime();
-      }).length;
-      dailyData.push(dayCount);
-    }
-
-    const labels = Array.isArray(summaryDays) ? summaryDays.map(row => {
-      const [, month, day] = row.date.split('-');
-      return `${Number(day)}.${Number(month)}`;
-    }) : Array.from({ length: 14 }, (_, i) => {
-      const d = new Date(now.getTime() - (13 - i) * 24 * 60 * 60 * 1000);
-      return `${d.getDate()}.${d.getMonth() + 1}`;
-    });
+    if (!canvas || !this._chartJsLoaded) return;
+    this._destroyChart('sparkline');
+    const rows = this._aaChartModelsV3.sparkline.rows;
+    if (!rows.length) return;
+    const labels = rows.map(row => row.label);
+    const dailyData = rows.map(row => row.value);
 
     const colors = this._getComputedColors();
-    this._charts["sparkline"] = new AAChart(canvas.getContext("2d"), {
+    const context = this._chartContextV3('sparkline', 'sparkline-chart');
+    if (!context) return;
+    this._charts["sparkline"] = new AAChart(context, {
       type: "line",
       data: {
         labels,
@@ -4271,6 +4403,7 @@ ${styles}
         }]
       },
       options: {
+        onClick: (_event, elements) => this._chartPickV3('sparkline', elements),
         animation: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? false : undefined,
         responsive: true,
         maintainAspectRatio: false,
