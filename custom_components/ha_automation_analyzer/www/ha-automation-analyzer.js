@@ -1660,6 +1660,28 @@ const _LOCAL_INTRO_PL = {
   steps: ['Przegląd pokazuje liczbę automatyzacji, ocenę i najczęstsze błędy.', 'Wydajność porządkuje automatyzacje według średniego czasu wykonania.', 'Optymalizacja wskazuje możliwe usprawnienia, w tym pętle i zbędne wyzwalacze.']
 };
 const _LOCAL_SUPPORT_KEY = 'ha-automation-analyzer-support-dismissed';
+// Shared family touch-target and focus rules, scoped to this card/editor.
+const _AA_CONTROL_CSS = `
+:host button,:host summary,:host a[href],:host [role=button],
+:host input:not([type=checkbox]):not([type=radio]),:host select,:host textarea {
+  box-sizing:border-box;min-height:44px !important;min-width:44px !important;max-width:100%;
+}
+:host button,:host summary,:host a[href] { white-space:normal !important;overflow-wrap:anywhere; }
+:host a[href] { display:inline-flex;align-items:center; }
+:host label:has(input[type=checkbox]) { min-height:44px !important;min-width:44px;display:flex;align-items:center;gap:8px;cursor:pointer; }
+:host input[type=checkbox] { width:18px;height:18px;flex:none; }
+:host :is(button,summary,a,input,select,textarea,[role=button]):focus-visible {
+  outline:3px solid var(--bento-primary,var(--primary-color,#1769aa)) !important;outline-offset:2px;
+}
+.intro-banner { padding-right:68px !important; }
+.auto-item,.auto-item-full { min-height:44px; }
+.tl-control-group { min-width:0;max-width:100%; }
+.tl-select-bar select { width:100%; }
+.trace-stats-control { flex-wrap:wrap; }
+.trace-stats-copy { flex-basis:180px; }
+.trace-notice-global > div { min-width:0;overflow-wrap:anywhere; }
+`;
+
 const _LOCAL_DONATE_HTML = '<div class="donate-section" data-source="own-card" style="margin:8px 0 0;padding:4px 0;background:none;border:0;box-shadow:none;min-height:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-direction:row;justify-content:flex-start;text-align:left"><a href="https://buymeacoffee.com/macsiem" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--secondary-text-color,#64748b);font-weight:400;text-decoration:underline">Optional support for HA Tools</a><button type="button" class="support-dismiss" aria-label="Dismiss support link" style="margin-left:auto;padding:2px 6px;min-height:0;line-height:1;border:0;background:none;color:var(--secondary-text-color,#64748b);cursor:pointer">×</button></div>';
 function _renderLocalSupport(lang = 'en') {
   return lang === 'pl' ? _LOCAL_DONATE_HTML.replace('Optional support for HA Tools', 'Opcjonalne wsparcie HA Tools').replace('Dismiss support link', 'Ukryj odnośnik wsparcia') : _LOCAL_DONATE_HTML;
@@ -4041,7 +4063,7 @@ class HAAutomationAnalyzer extends HTMLElement {
           <h2 class="card-title">${this._t.automations}</h2>
           <div class="filter-bar">
             <input type="text" id="aa-filter-input" placeholder="${this._t.searchPlaceholder}" value="${_esc(this._filterText)}">
-            <select id="aa-sort-select">
+            <select id="aa-sort-select" aria-label="${this._lang === 'pl' ? 'Sortowanie automatyzacji' : 'Sort automations'}">
               <option value="lastTriggered" ${this._sortBy === "lastTriggered" ? "selected" : ""}>${this._t.lastTriggered}</option>
               <option value="name" ${this._sortBy === "name" ? "selected" : ""}>${this._t.name}</option>
               <option value="todayCount" ${this._sortBy === "todayCount" ? "selected" : ""}>${this._t.runsTodayOption}</option>
@@ -4049,7 +4071,7 @@ class HAAutomationAnalyzer extends HTMLElement {
               <option value="state" ${this._sortBy === "state" ? "selected" : ""}>${this._t.state}</option>
             </select>
             <button class="sort-dir-btn" id="aa-sort-dir" title="${this._sortDir === "desc" ? this._t.descending : this._t.ascending}">${this._sortDir === "desc" ? "\u2193" : "\u2191"}</button>
-            <select id="aa-time-range">
+            <select id="aa-time-range" aria-label="${this._lang === 'pl' ? 'Okres' : 'Time range'}">
               <option value="all" ${this._timeRange === "all" ? "selected" : ""}>${this._t.allTime}</option>
               <option value="1" ${this._timeRange === "1" ? "selected" : ""}>${this._t.today}</option>
               <option value="7" ${this._timeRange === "7" ? "selected" : ""}>${this._t.sevenDays}</option>
@@ -4313,7 +4335,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       activeTabContent = `
         <h2 class="card-title" style="margin-bottom:var(--aa-space-4)">${this._t.timelineTitle}</h2>
         <div class="tl-select-bar">
-          <select id="tl-auto-select">
+          <select id="tl-auto-select" aria-label="${this._lang === 'pl' ? 'Automatyzacja' : 'Automation'}">
             <option value="">— ${this._t.timelineSelectPrompt} —</option>
             ${selectorOptions}
           </select>
@@ -4453,6 +4475,7 @@ ${styles}
           .page-size-select { font-size: 11px; padding: 4px 24px 4px 6px; }
         }
 
+${_AA_CONTROL_CSS}
 </style>
       ${_renderLocalIntro(this._lang)}
       <div class="card">
@@ -4531,7 +4554,7 @@ ${styles}
         <button class="pagination-btn" data-page-tab="${tabName}" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>&#8249; Prev</button>
         <span class="pagination-info">${page} / ${totalPages} (${totalItems})</span>
         <button class="pagination-btn" data-page-tab="${tabName}" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>Next &#8250;</button>
-        <select class="page-size-select" data-page-tab="${tabName}" data-action="page-size">
+        <select class="page-size-select" aria-label="${this._lang === 'pl' ? 'Wyniki na stronie' : 'Results per page'}" data-page-tab="${tabName}" data-action="page-size">
           ${[10,15,25,50].map(s => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}/page</option>`).join('')}
         </select>
       </div>`;
@@ -5039,7 +5062,7 @@ class HaAutomationAnalyzerEditor extends HTMLElement {
   }
   _render() {
     this.shadowRoot.innerHTML = `
-      <style>
+      <style>${_AA_CONTROL_CSS}
             :host { display:block; padding:16px; }
             h3 { margin:0 0 16px; font-size:15px; font-weight:600; color:var(--bento-text, var(--primary-text-color,#1e293b)); }
             input { outline:none; transition:border-color .2s; }
@@ -5047,7 +5070,7 @@ class HaAutomationAnalyzerEditor extends HTMLElement {
         </style>
       <h3>Automation Analyzer</h3>
             <div style="margin-bottom:12px;">
-              <label style="display:block;font-weight:500;margin-bottom:4px;font-size:13px;">Title</label>
+              <label for="cf_title" style="display:block;font-weight:500;margin-bottom:4px;font-size:13px;">Title</label>
               <input type="text" id="cf_title" value="${_esc(this._config?.title || 'Automation Analyzer')}"
                 style="width:100%;padding:8px 12px;border:1px solid var(--divider-color,#e2e8f0);border-radius:8px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#1e293b);font-size:14px;box-sizing:border-box;">
             </div>
