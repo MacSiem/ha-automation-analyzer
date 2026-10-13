@@ -1780,6 +1780,8 @@ class HAAutomationAnalyzer extends HTMLElement {
       this._diagnosticBlockedCapabilityV3 = this._timelineData?.capability || null;
       this._syncDiagnosticContextV3();
     };
+    this._diagnosticConnectionHandlersV3 = { ready: () => this._diagnosticNetworkHandlerV3({ type: 'ready' }),
+      disconnected: () => this._diagnosticNetworkHandlerV3({ type: 'disconnected' }) };
     // panel_custom supplies hass directly, so initialize the same defaults as Lovelace.
     this.setConfig({});
   }
@@ -2850,10 +2852,10 @@ class HAAutomationAnalyzer extends HTMLElement {
 
   _listenDiagnosticConnectionV3(connection) {
     if (connection === this._diagnosticEventConnectionV3) return;
-    for (const type of ['ready', 'disconnected']) this._diagnosticEventConnectionV3?.removeEventListener?.(type, this._diagnosticNetworkHandlerV3);
+    for (const type of ['ready', 'disconnected']) this._diagnosticEventConnectionV3?.removeEventListener?.(type, this._diagnosticConnectionHandlersV3[type]);
     this._diagnosticEventConnectionV3 = connection || null;
     this._diagnosticConnectionOnlineV3 = connection?.connected !== false;
-    for (const type of ['ready', 'disconnected']) connection?.addEventListener?.(type, this._diagnosticNetworkHandlerV3);
+    for (const type of ['ready', 'disconnected']) connection?.addEventListener?.(type, this._diagnosticConnectionHandlersV3[type]);
   }
 
   _syncDiagnosticContextV3(notify = true) {
@@ -2894,8 +2896,8 @@ class HAAutomationAnalyzer extends HTMLElement {
       generatedAt: this._timelineData.capability.observed_at });
     if (diagnostic.status === 'unavailable') return { status: 'no_data', serialized: '' };
     const pl = this._lang === 'pl';
-    const included = [pl ? 'Anonimowy stan wykonania, zmierzone czasy i ścieżki kroków' : 'Anonymous run state, measured times and step paths',
-      pl ? 'Dostępne porównanie dwóch wybranych tras' : 'Available comparison of two selected traces'];
+    const included = [pl ? 'Anonimowy stan wykonania, zmierzone czasy i ścieżki kroków' : 'Anonymous run state, measured times and step paths'];
+    if (diagnostic.comparison) included.push(pl ? 'Porównanie dwóch wybranych tras' : 'Comparison of the two selected traces');
     const excluded = [pl ? 'Identyfikatory i nazwy automatyzacji, tras, osób oraz urządzeń' : 'Automation, run, person and device IDs and names',
       pl ? 'Tokeny, użytkownicy, adresy, zmienne, komunikaty i surowa konfiguracja' : 'Tokens, users, addresses, variables, messages and raw configuration'];
     const sourceLimit = pl ? 'Tylko zachowane kroki wybranej trasy. Retencja HA może pomijać historię; brak czasu pozostaje null. Ten raport zawsze pomija pola identyfikujące, również po zaznaczeniu opcji prywatnych.'
