@@ -45,6 +45,8 @@ test('diagnostic opens safe exact JSON preview with filename, scope and private 
   const text = field(f, 'preview').textContent, payload = JSON.parse(text);
   assert.equal(payload.run.alias, 'run_001'); assert.equal(payload.run.duration_ms, 120);
   assert.doesNotMatch(text, /PRIVATE_|private-run-id|preview-source|person\.|secret|service_data/);
+  assert.equal(payload.comparison, undefined);
+  assert.doesNotMatch(field(f, 'included').textContent, /comparison/i);
   assert.ok(field(f, 'included').textContent.length); assert.ok(field(f, 'excluded').textContent.length);
   assert.match(field(f, 'source-limit').textContent, /retained|retention/i);
 });
@@ -96,4 +98,20 @@ test('detach closes the export and releases its document listeners', async t => 
   assert.equal(root(f), undefined);
   assert.deepEqual(f.shell.listeners.liveLongLivedFor(f.card), []);
   assert.equal(f.handoffs.length, 0);
+});
+
+test('connection notifications do not depend on DOM Event payloads', async t => {
+  const f = await fixture(t); await open(f);
+  const callbacks = new Map();
+  const connection = { ...f.hass.connection, connected: true,
+    addEventListener: (type, callback) => callbacks.set(type, callback),
+    removeEventListener: (type, callback) => { if (callbacks.get(type) === callback) callbacks.delete(type); } };
+  f.card.hass = { ...f.hass, connection }; await flushTurns();
+  await f.card._fetchTimeline('automation.preview-source'); await flushTurns();
+  field(f, 'refresh').click(); await flushTurns(); assert.ok(field(f, 'preview').textContent);
+  callbacks.get('disconnected')(); await flushTurns();
+  assert.equal(field(f, 'preview').textContent, ''); assert.equal(field(f, 'save').disabled, true);
+  callbacks.get('ready')(); field(f, 'refresh').click(); await flushTurns();
+  assert.equal(field(f, 'preview').textContent, '');
+  f.card.remove(); assert.equal(callbacks.size, 0); assert.equal(f.handoffs.length, 0);
 });
