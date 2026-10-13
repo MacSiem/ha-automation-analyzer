@@ -4266,7 +4266,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       if (this._timelineLoading) {
         timelineBody = `<div class="loading-state"><div class="loading-spinner" style="margin:0 auto 10px;width:22px;height:22px;border-width:3px;border-color:rgba(0,0,0,.1);border-top-color:var(--bento-primary)"></div><div>${this._t.timelineLoading}</div></div>`;
       } else if (this._timelineError) {
-        timelineBody = `<div class="tl-inline-err">${_esc(this._timelineMessage(this._timelineError))}</div>`;
+        timelineBody = `<div class="tl-inline-err">${createUiV3({ language: this._lang }).statusHtml(this._timelineError === 'no_data' ? 'no_data' : 'error')}<div>${_esc(this._timelineMessage(this._timelineError))}</div></div>`;
       } else if (!this._selectedTimelineId) {
         timelineBody = `<div class="empty-state">${this._t.timelineSelectPrompt}</div>`;
       } else if (this._timelineData?.empty) {
