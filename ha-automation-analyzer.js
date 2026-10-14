@@ -4003,7 +4003,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
       .tl-badge {
-        font-size: 10px; font-weight: 700; padding: 2px 8px;
+        font-size: 12px; font-weight: 700; padding: 2px 8px;
         border-radius: 999px; flex-shrink: 0; border: 1px solid;
         text-transform: uppercase; letter-spacing: .04em;
       }
@@ -4012,16 +4012,27 @@ class HAAutomationAnalyzer extends HTMLElement {
       .tl-badge.tl-skip    { background: var(--bento-bg-2, #f5f5f4); color: var(--bento-text-muted, #94a3b8); border-color: var(--bento-border, #e2e8f0); }
       .tl-badge.tl-changed { background: var(--bento-warning-light, rgba(245,158,11,.1)); color: var(--bento-warning, #f59e0b); border-color: var(--bento-warning-border, rgba(245,158,11,.25)); }
       .tl-time {
-        font-size: 11px; color: var(--bento-text-muted); font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 12px; color: #475569; font-family: "JetBrains Mono", ui-monospace, monospace;
         white-space: nowrap; flex-shrink: 0;
       }
       .tl-error-msg {
-        margin-top: 4px; font-size: 11.5px; color: var(--bento-error, #ef4444);
+        margin-top: 4px; font-size: 12px; color: #991b1b;
         background: var(--bento-error-light, rgba(239,68,68,.08));
         border-radius: var(--bento-radius-xs); padding: 5px 9px;
         border: 1px solid var(--bento-error-border, rgba(239,68,68,.2));
         word-break: break-word;
       }
+      /* Text colors are independent of the decorative status dots. */
+      .tl-badge.tl-pass { color: #166534; }
+      .tl-badge.tl-fail { color: #991b1b; }
+      .tl-badge.tl-skip { color: #475569; }
+      .tl-badge.tl-changed { color: #92400e; }
+      :host(.bento-dark) .tl-badge.tl-pass { color: #86efac; }
+      :host(.bento-dark) .tl-badge.tl-fail,
+      :host(.bento-dark) .tl-error-msg { color: #fca5a5; }
+      :host(.bento-dark) .tl-badge.tl-skip,
+      :host(.bento-dark) .tl-time { color: #cbd5e1; }
+      :host(.bento-dark) .tl-badge.tl-changed { color: #fcd34d; }
       .tl-tip {
         margin-top: var(--aa-space-4); font-size: 12px; color: var(--bento-text-secondary);
         background: var(--bento-primary-light, rgba(59,130,246,.08));
