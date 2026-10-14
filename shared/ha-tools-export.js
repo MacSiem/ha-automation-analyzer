@@ -59,28 +59,42 @@ export function createExportDialog(options) {
     pl: { title: 'Eksport', filename: 'Nazwa pliku', format: 'Format', private: 'Dołącz sprawdzone pola prywatne (tylko ten eksport)', included: 'W pliku jest', excluded: 'W pliku nie ma', source: 'Źródło i ograniczenia', preview: 'Dokładna zawartość pliku', save: 'Zapisz', refresh: 'Odśwież podgląd', cancel: 'Anuluj', busy: 'Przygotowywanie podglądu… Zapis wymaga potwierdzonej zawartości.', changed: 'Wybór zmieniony. Odśwież podgląd przed zapisem.', context: 'Źródło lub uprawnienia zmienione. Sprawdź źródło i odśwież podgląd.', unavailable: 'Źródło niedostępne lub niepotwierdzone. Połącz lub potwierdź źródło i odśwież.', invalidFormat: 'Wybierz dostępny format: JSON, CSV, TXT lub YAML z listy.', invalidName: 'Użyj nazwy pliku o długości 1–128 znaków: bez ścieżek, znaków sterujących, nazw zastrzeżonych i skrajnych spacji.', extension: 'Nazwa pliku musi mieć rozszerzenie wybranego formatu. Popraw nazwę i odśwież.', timeout: 'Podgląd przekroczył 10 sekund. Sprawdź źródło i jawnie odśwież.', buildError: 'Nie udało się przygotować potwierdzonego podglądu. Sprawdź źródło i odśwież.', unconfirmed: 'Zawartość lub opis źródła niepotwierdzony. Potwierdź źródło i odśwież.', noData: 'Brak potwierdzonej zawartości pliku. Wybierz dostępne dane i odśwież.', saving: 'Przekazywanie potwierdzonego podglądu… Poczekaj na wynik zapisu.', initiated: 'Pobieranie rozpoczęte. Zapis na dysku nie jest potwierdzony. Odśwież tylko dla nowej próby eksportu.', saved: 'Adapter pobierania potwierdził zapis.', unknown: 'Wynik pobierania niepotwierdzony. Sprawdź poprzednią próbę przed jawnym odświeżeniem dla nowego eksportu.' },
   };
   const css = `
-[data-ha-tools-export] { container-type:inline-size;min-width:0;max-width:100%;color:var(--primary-text-color,inherit);font:inherit; }
+[data-ha-tools-export] { min-width:0;max-width:100%;color:var(--primary-text-color,#1e293b);font:inherit; }
 [data-ha-tools-export] * { box-sizing:border-box; }
-[data-ha-tools-export] [role=dialog] { width:100%;min-width:0;border:1px solid var(--divider-color,#aaa);border-radius:12px;background:var(--card-background-color,#fff);padding:16px; }
+[data-ha-tools-export] dialog { width:min(520px,calc(100vw - 32px));max-width:none;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);min-width:0;margin:auto;padding:0;border:1px solid var(--divider-color,#e2e8f0);border-radius:18px;background:var(--card-background-color,#fff);color:inherit;font:inherit;box-shadow:0 24px 64px #0f172a33;overflow:hidden; }
+[data-ha-tools-export] dialog[open] { display:flex;flex-direction:column; }
+[data-ha-tools-export] dialog::backdrop { background:#0f172a66; }
+[data-ha-tools-export] .ht-export-body { min-height:0;overflow:auto;overscroll-behavior:contain;padding:24px; }
 [data-ha-tools-export] h2,[data-ha-tools-export] h3,[data-ha-tools-export] p,[data-ha-tools-export] li { overflow-wrap:anywhere;white-space:normal; }
-[data-ha-tools-export] h2 { margin:0 0 12px;font-size:1.25em; }
-[data-ha-tools-export] h3 { margin:12px 0 6px;font-size:1em; }
-[data-ha-tools-export] .ht-export-fields { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px; }
-[data-ha-tools-export] label { display:flex;flex-direction:column;gap:4px;min-width:0;overflow-wrap:anywhere; }
+[data-ha-tools-export] h2 { margin:0 0 16px;font-size:1.25em;line-height:1.4; }
+[data-ha-tools-export] h3 { margin:16px 0 6px;font-size:1em;line-height:1.5; }
+[data-ha-tools-export] p { line-height:1.5; }
+[data-ha-tools-export] .ht-export-fields { display:grid;grid-template-columns:minmax(0,1fr);gap:12px; }
+[data-ha-tools-export] label { display:flex;flex-direction:column;gap:6px;min-width:0;overflow-wrap:anywhere; }
+[data-ha-tools-export] .ht-export-format { margin-top:16px; }
 [data-ha-tools-export] .ht-export-private { flex-direction:row;align-items:center;min-height:44px;margin-top:12px; }
 [data-ha-tools-export] input:not([type=checkbox]),[data-ha-tools-export] select,[data-ha-tools-export] button { font:inherit;min-width:44px;min-height:44px;max-width:100%; }
-[data-ha-tools-export] input:not([type=checkbox]),[data-ha-tools-export] select { width:100%;color:inherit;background:var(--secondary-background-color,var(--card-background-color,#f5f5f5));border:1px solid var(--divider-color,#aaa);border-radius:6px;padding:8px; }
+[data-ha-tools-export] input:not([type=checkbox]),[data-ha-tools-export] select { width:100%;color:inherit;background:var(--ht-export-field-bg,#f8fafc);border:1px solid var(--divider-color,#cbd5e1);border-radius:8px;padding:8px 12px; }
 [data-ha-tools-export] input[type=checkbox] { width:24px;height:24px;flex:none;margin:10px; }
-[data-ha-tools-export] button { padding:8px 12px;white-space:normal;overflow-wrap:anywhere;cursor:pointer;border:1px solid var(--divider-color,#aaa);border-radius:6px;color:inherit;background:var(--secondary-background-color,var(--card-background-color,#f5f5f5)); }
-[data-ha-tools-export] :focus-visible { outline:3px solid var(--primary-color,#1769aa);outline-offset:2px; }
+[data-ha-tools-export] [data-export-scope] { padding:12px 14px;border-radius:10px;margin-top:14px; }
+[data-ha-tools-export] [data-export-scope] h3 { margin:0 0 6px; }
+[data-ha-tools-export] [data-export-scope=included] { background:var(--ht-export-included-bg,#ecfdf3);color:var(--ht-export-included-text,#166534); }
+[data-ha-tools-export] [data-export-scope=excluded] { background:var(--ht-export-excluded-bg,#fff1f2);color:var(--ht-export-excluded-text,#9f1239); }
+[data-ha-tools-export] ul { padding:0;margin:0;list-style:none; }
+[data-ha-tools-export] li { display:flex;gap:6px;line-height:1.5; }
+[data-ha-tools-export] li + li { margin-top:4px; }
+[data-ha-tools-export] [data-export-scope=included] li::before { content:'✓';flex:none; }
+[data-ha-tools-export] [data-export-scope=excluded] li::before { content:'×';flex:none; }
+[data-ha-tools-export] button { padding:8px 12px;white-space:normal;overflow-wrap:anywhere;cursor:pointer;border:1px solid transparent;border-radius:8px;color:var(--ht-export-accent,#0369a1);background:transparent; }
+[data-ha-tools-export] [data-export=save] { color:var(--ht-export-save-text,#fff);background:var(--ht-export-accent,#0369a1); }
+[data-ha-tools-export] :focus-visible { outline:3px solid var(--ht-export-accent,#0369a1);outline-offset:2px; }
 [data-ha-tools-export] button:disabled { cursor:default;opacity:.6; }
-[data-ha-tools-export] .ht-export-actions { display:flex;flex-wrap:wrap;gap:8px;margin-top:16px; }
-[data-ha-tools-export] pre { max-width:100%;min-width:0;max-height:320px;overflow:auto;white-space:pre;margin:0;padding:12px;border:1px solid var(--divider-color,#aaa);background:var(--secondary-background-color,var(--card-background-color,#f5f5f5)); }
-[data-ha-tools-export] ul { padding-inline-start:22px;margin:0; }
-@container (max-width:499px) { [data-ha-tools-export] .ht-export-fields { grid-template-columns:minmax(0,1fr); } }
-@container (max-width:319px) { [data-ha-tools-export] [role=dialog] { padding:10px; } [data-ha-tools-export] .ht-export-actions button { flex:1 1 100%; } }
-`;
-  let container, nodes, L, ui, opener, alive = false, destroyed = false, serial = 0;
+[data-ha-tools-export] .ht-export-actions { display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;flex:none;padding:12px 24px;border-top:1px solid var(--divider-color,#e2e8f0);background:var(--card-background-color,#fff); }
+[data-ha-tools-export] pre { max-width:100%;min-width:0;max-height:260px;overflow:auto;white-space:pre;margin:0;padding:12px;border:1px solid var(--divider-color,#cbd5e1);border-radius:8px;background:var(--ht-export-field-bg,#f8fafc); }
+:host(.bento-dark) { --ht-export-field-bg:#0f172a;--ht-export-included-bg:#103827;--ht-export-included-text:#bbf7d0;--ht-export-excluded-bg:#43212a;--ht-export-excluded-text:#fda4af;--ht-export-accent:#7dd3fc;--ht-export-save-text:#0f172a; }
+@media (max-width:399px) { [data-ha-tools-export] .ht-export-body { padding:16px; } [data-ha-tools-export] .ht-export-actions { padding:12px 16px;gap:6px; } }
+@media (max-width:319px) { [data-ha-tools-export] dialog { width:calc(100vw - 16px); } [data-ha-tools-export] .ht-export-actions button { flex:1 1 auto; } }
+`;  let container, nodes, L, ui, opener, alive = false, destroyed = false, serial = 0;
   let pending = null, handoff = null, ready = null, observed = null;
   const listeners = [];
   const on = (target, event, handler, capture = false) => {
@@ -239,7 +253,9 @@ export function createExportDialog(options) {
   function cancel() {
     if (!alive) return;
     discard(true); if (handoff) handoff.controller.abort();
-    alive = false; listeners.splice(0).forEach(off => off()); container.remove();
+    alive = false; listeners.splice(0).forEach(off => off());
+    if (nodes.dialog.open) nodes.dialog.close();
+    container.remove();
     container = null; nodes = null; observed = null;
     // A pending handoff remains latched until settled: reopening never repeats it.
     if (opener?.isConnected && typeof opener.focus === 'function') opener.focus();
@@ -262,34 +278,44 @@ export function createExportDialog(options) {
     const shell = doc.createElement('div'); shell.setAttribute('data-ha-tools-export', ''); shadow.append(shell);
     nodes = {};
     const make = (tag, key, parent, text) => { const node = doc.createElement(tag); if (key) { node.dataset.export = key; nodes[key] = node; } if (text) node.textContent = text; parent.append(node); return node; };
-    const dialog = make('section', 'dialog', shell); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
-    const title = make('h2', 'title', dialog, L.title);
+    const dialog = make('dialog', 'dialog', shell); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+    const body = make('div', null, dialog); body.className = 'ht-export-body';
+    const title = make('h2', 'title', body, L.title);
     // Locally unique IDs, no random or global counters/persistent state.
     const prefix = `ht-export-${String(clock()).replace(/\W/g, '')}`;
     title.id = prefix + '-title'; dialog.setAttribute('aria-labelledby', title.id);
-    const fields = make('div', null, dialog); fields.className = 'ht-export-fields';
+    const fields = make('div', null, body); fields.className = 'ht-export-fields';
     const filenameLabel = make('label', null, fields); make('span', null, filenameLabel, L.filename);
     const filename = make('input', 'filename', filenameLabel); filename.type = 'text'; filename.value = defaultFilename; filename.autocomplete = 'off';
-    const formatLabel = make('label', null, fields); make('span', null, formatLabel, L.format);
+    for (const key of ['included', 'excluded']) {
+      const scope = make('section', null, body); scope.dataset.exportScope = key;
+      make('h3', null, scope, L[key]); make('ul', key, scope);
+    }
+    const formatLabel = make('label', null, body); formatLabel.className = 'ht-export-format'; make('span', null, formatLabel, L.format);
     const format = make('select', 'format', formatLabel);
     formats.forEach(value => { const option = make('option', null, format, value.toUpperCase()); option.value = value; }); format.value = defaultFormat;
-    const privateLabel = make('label', null, dialog); privateLabel.className = 'ht-export-private';
+    const privateLabel = make('label', null, body); privateLabel.className = 'ht-export-private';
     const privateInput = make('input', 'private', privateLabel); privateInput.type = 'checkbox'; privateInput.checked = false; make('span', null, privateLabel, L.private);
-    const statusLine = make('p', null, dialog); statusLine.setAttribute('role', 'status'); statusLine.setAttribute('aria-live', 'polite');
+    const statusLine = make('p', null, body); statusLine.setAttribute('role', 'status'); statusLine.setAttribute('aria-live', 'polite');
     make('span', 'status', statusLine); make('span', 'message', statusLine);
-    for (const key of ['included', 'excluded']) { make('h3', null, dialog, L[key]); make('ul', key, dialog); }
-    make('h3', null, dialog, L.source); make('p', 'source-limit', dialog);
-    const previewHeading = make('h3', null, dialog, L.preview); previewHeading.id = prefix + '-preview';
-    const preview = make('pre', 'preview', dialog); preview.tabIndex = 0; preview.setAttribute('aria-labelledby', previewHeading.id);
+    make('h3', null, body, L.source); make('p', 'source-limit', body);
+    const previewHeading = make('h3', null, body, L.preview); previewHeading.id = prefix + '-preview';
+    const preview = make('pre', 'preview', body); preview.tabIndex = 0; preview.setAttribute('aria-labelledby', previewHeading.id);
     const actions = make('div', null, dialog); actions.className = 'ht-export-actions';
     for (const key of ['refresh', 'save', 'cancel']) { const button = make('button', key, actions, L[key]); button.type = 'button'; }
     root.append(container); alive = true; observed = readContext();
     for (const [key, event] of [['filename', 'input'], ['format', 'change'], ['private', 'change']]) on(nodes[key], event, changeDraft);
     on(nodes.refresh, 'click', refresh); on(nodes.save, 'click', save); on(nodes.cancel, 'click', cancel);
-    on(doc, 'keydown', keydown, true);
-    on(doc, 'focusin', event => {
-      if (alive && !event.composedPath().includes(nodes.dialog)) focusable()[0]?.focus();
-    }, true);
+    on(dialog, 'keydown', keydown);
+    on(dialog, 'cancel', event => { event.preventDefault(); cancel(); });
+    on(dialog, 'close', () => { if (alive && nodes?.dialog === dialog) cancel(); });
+    try {
+      if (typeof dialog.showModal !== 'function') throw new Error('Native export dialog is unavailable');
+      dialog.showModal();
+    } catch (error) {
+      cancel();
+      throw error;
+    }
     // The consumer supplies exact opener even when its shadow DOM hides activeElement.
     filename.focus();
     if (handoff) {
