@@ -2,7 +2,7 @@
   "schema_version": 2,
   "source": {
     "path": "ha-automation-analyzer.js",
-    "sha256": "0ef4c0f0415d3a26cc51edda3eb3b77a7056900d16cd605ef57a9797eb86bd12"
+    "sha256": "7e424195c81e17c8b06fe04048b633ee5681440f3897a7aed998a95d9f6d209e"
   },
   "fixture": {
     "seed": "aa-demo-v1",
@@ -21,17 +21,17 @@
       "theme": "light",
       "viewport": "desktop",
       "pixel_width": 480,
-      "pixel_height": 1309,
-      "source_sha256": "0ef4c0f0415d3a26cc51edda3eb3b77a7056900d16cd605ef57a9797eb86bd12",
-      "image_sha256": "9e4023497d8cc3657e3bb5bdde522b8a4dbefb096d6bb064310bc7e30799c0f0",
+      "pixel_height": 1718,
+      "source_sha256": "7e424195c81e17c8b06fe04048b633ee5681440f3897a7aed998a95d9f6d209e",
+      "image_sha256": "eac6975a0b422b7ebf46050c79a72037bdef28e77dbb93dcdf69ad9e1c672591",
       "render_sha256_samples": [
-        "9e4023497d8cc3657e3bb5bdde522b8a4dbefb096d6bb064310bc7e30799c0f0",
-        "9e4023497d8cc3657e3bb5bdde522b8a4dbefb096d6bb064310bc7e30799c0f0"
+        "eac6975a0b422b7ebf46050c79a72037bdef28e77dbb93dcdf69ad9e1c672591",
+        "eac6975a0b422b7ebf46050c79a72037bdef28e77dbb93dcdf69ad9e1c672591"
       ],
       "layout": {
         "horizontal_overflow": false,
-        "chart_state_height": 0,
-        "chart_panel_height": 314,
+        "chart_state_height": 611,
+        "chart_panel_height": 611,
         "painted_chart_count": 1
       },
       "runtime": {
@@ -45,17 +45,17 @@
       "theme": "dark",
       "viewport": "desktop",
       "pixel_width": 480,
-      "pixel_height": 1309,
-      "source_sha256": "0ef4c0f0415d3a26cc51edda3eb3b77a7056900d16cd605ef57a9797eb86bd12",
-      "image_sha256": "48273dcefae12d4e092506ca6b34c5f38a3c46749868b45c97ce89b4e74a6fe5",
+      "pixel_height": 1718,
+      "source_sha256": "7e424195c81e17c8b06fe04048b633ee5681440f3897a7aed998a95d9f6d209e",
+      "image_sha256": "4df1b577d99c6fe901a56efa7aeca14bf829cef5d7df29f5b5decfde2abfeeb8",
       "render_sha256_samples": [
-        "48273dcefae12d4e092506ca6b34c5f38a3c46749868b45c97ce89b4e74a6fe5",
-        "48273dcefae12d4e092506ca6b34c5f38a3c46749868b45c97ce89b4e74a6fe5"
+        "4df1b577d99c6fe901a56efa7aeca14bf829cef5d7df29f5b5decfde2abfeeb8",
+        "4df1b577d99c6fe901a56efa7aeca14bf829cef5d7df29f5b5decfde2abfeeb8"
       ],
       "layout": {
         "horizontal_overflow": false,
-        "chart_state_height": 0,
-        "chart_panel_height": 314,
+        "chart_state_height": 611,
+        "chart_panel_height": 611,
         "painted_chart_count": 1
       },
       "runtime": {
@@ -69,17 +69,17 @@
       "theme": "light",
       "viewport": "narrow",
       "pixel_width": 360,
-      "pixel_height": 1424,
-      "source_sha256": "0ef4c0f0415d3a26cc51edda3eb3b77a7056900d16cd605ef57a9797eb86bd12",
-      "image_sha256": "65bde0cdf19eb95d4322b1d9ed73ce8992e1b2bdae14593fc77df5c63693a133",
+      "pixel_height": 1887,
+      "source_sha256": "7e424195c81e17c8b06fe04048b633ee5681440f3897a7aed998a95d9f6d209e",
+      "image_sha256": "d44ee8559973ced38227f90140787841ab472300da29aed6ef444391a354a203",
       "render_sha256_samples": [
-        "65bde0cdf19eb95d4322b1d9ed73ce8992e1b2bdae14593fc77df5c63693a133",
-        "65bde0cdf19eb95d4322b1d9ed73ce8992e1b2bdae14593fc77df5c63693a133"
+        "d44ee8559973ced38227f90140787841ab472300da29aed6ef444391a354a203",
+        "d44ee8559973ced38227f90140787841ab472300da29aed6ef444391a354a203"
       ],
       "layout": {
         "horizontal_overflow": false,
-        "chart_state_height": 0,
-        "chart_panel_height": 314,
+        "chart_state_height": 630,
+        "chart_panel_height": 630,
         "painted_chart_count": 1
       },
       "runtime": {
