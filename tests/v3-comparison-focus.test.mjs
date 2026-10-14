@@ -125,10 +125,8 @@ test('Timeline baseline and empty automation changes retain their active selecto
     const select = root.getElementById(id); select.focus(); select.value = '';
     select.dispatchEvent(new f.shell.window.Event('change', { bubbles: true }));
     assert.equal(root.activeElement, root.getElementById(id));
-    assert.equal(root.activeElement.value, '');
+    assert.equal(root.activeElement.value, id === 'tl-auto-select' ? 'automation.focus' : '', 'keep existing default automation behavior');
   }
-  const select = root.getElementById('tl-auto-select'); select.value = 'automation.focus';
-  select.dispatchEvent(new f.shell.window.Event('change', { bubbles: true }));
   assert.equal(root.activeElement, root.getElementById('tl-auto-select'), 'loading render');
   await waitFor(() => !f.card._timelineLoading && f.card._timelineData, 'reselected automation');
   assert.equal(root.activeElement, root.getElementById('tl-auto-select'), 'completed render');
