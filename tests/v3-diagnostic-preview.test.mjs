@@ -1,4 +1,5 @@
 import test from 'node:test';
+import installDialogHarness from './helpers/native-dialog.cjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createShell, createHassFixture, waitFor, flushTurns } from './helpers/ha-shell.mjs';
@@ -6,6 +7,7 @@ import { createShell, createHassFixture, waitFor, flushTurns } from './helpers/h
 async function fixture(t) {
   const handoffs = [], blobs = new Map();
   const shell = createShell({ beforeLoad(window) {
+    installDialogHarness(window);
     window.Blob = Blob;
     window.URL.createObjectURL = blob => { const url = 'blob:synthetic-' + blobs.size; blobs.set(url, blob); return url; };
     window.URL.revokeObjectURL = () => {};
@@ -213,4 +215,23 @@ test('cancel while the picker is pending prohibits writing or a second intent on
   await flushTurns();
   assert.equal(picks, 1); assert.equal(writes, 0); assert.equal(f.handoffs.length, 0);
   assert.equal(field(f, 'save').disabled, true);
+});
+
+
+test('a live native export stays connected through card repaint with exact bytes, focus and caret', async t => {
+  const f = await fixture(t); await open(f);
+  const container = f.card.shadowRoot.querySelector('[data-ha-tools-export]');
+  const dialog = field(f, 'dialog'); assert.equal(dialog.tagName, 'DIALOG');
+  const filename = field(f, 'filename'), preview = field(f, 'preview').textContent;
+  filename.focus(); filename.setSelectionRange(2, 7); dialog.scrollTop = 80;
+  const records = [], observer = new f.shell.window.MutationObserver(changes => records.push(...changes));
+  observer.observe(f.card.shadowRoot, { childList: true });
+  for (let i = 0; i < 3; i++) { f.card.render(); await flushTurns(); }
+  observer.disconnect();
+  assert.equal(records.some(record => Array.from(record.removedNodes).includes(container)), false, 'native top layer must never lose its ancestor');
+  assert.equal(field(f, 'dialog'), dialog); assert.equal(dialog.matches(':modal'), true);
+  assert.equal(field(f, 'filename'), filename); assert.equal(root(f).activeElement, filename);
+  assert.deepEqual([filename.selectionStart, filename.selectionEnd], [2, 7]);
+  assert.equal(dialog.scrollTop, 80); assert.equal(field(f, 'preview').textContent, preview);
+  assert.equal(f.handoffs.length, 0);
 });
