@@ -224,6 +224,7 @@ test('a live native export stays connected through card repaint with exact bytes
   const dialog = field(f, 'dialog'); assert.equal(dialog.tagName, 'DIALOG');
   const filename = field(f, 'filename'), preview = field(f, 'preview').textContent;
   filename.focus(); filename.setSelectionRange(2, 7); dialog.scrollTop = 80;
+  const reads = f.hass.__calls.length;
   const records = [], observer = new f.shell.window.MutationObserver(changes => records.push(...changes));
   observer.observe(f.card.shadowRoot, { childList: true });
   for (let i = 0; i < 3; i++) { f.card.render(); await flushTurns(); }
@@ -233,5 +234,26 @@ test('a live native export stays connected through card repaint with exact bytes
   assert.equal(field(f, 'filename'), filename); assert.equal(root(f).activeElement, filename);
   assert.deepEqual([filename.selectionStart, filename.selectionEnd], [2, 7]);
   assert.equal(dialog.scrollTop, 80); assert.equal(field(f, 'preview').textContent, preview);
+  assert.equal(f.hass.__calls.length, reads, 'repaint adds no source reads');
   assert.equal(f.handoffs.length, 0);
+});
+
+
+test('native modal repaint preserves a pending Save intent without another picker or preview', async t => {
+  const f = await fixture(t); await open(f);
+  let resolvePicker, pickerCalls = 0, written;
+  const picker = new Promise(resolve => { resolvePicker = resolve; });
+  const filename = field(f, 'filename').value, bytes = field(f, 'preview').textContent;
+  f.shell.window.showSaveFilePicker = () => { pickerCalls++; return picker; };
+  const dialog = field(f, 'dialog'); field(f, 'save').click(); await flushTurns();
+  f.card.render(); await flushTurns();
+  assert.equal(field(f, 'dialog'), dialog); assert.equal(dialog.matches(':modal'), true);
+  assert.equal(field(f, 'filename').disabled, true); assert.equal(field(f, 'save').disabled, true);
+  assert.equal(field(f, 'preview').textContent, bytes); assert.equal(pickerCalls, 1);
+  resolvePicker({ name: filename, createWritable: async () => ({
+    write: async blob => { written = blob; }, close: async () => {}, abort: async () => {},
+  }), getFile: async () => written });
+  await waitFor(() => field(f, 'status').dataset.resultState === 'success', 'saved after repaint');
+  assert.equal(await written.text(), bytes); field(f, 'save').click(); await flushTurns();
+  assert.equal(pickerCalls, 1);
 });
