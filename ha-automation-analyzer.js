@@ -2935,11 +2935,13 @@ class HAAutomationAnalyzer extends HTMLElement {
       || baselineRunId === this._timelineSelectedRunId) return;
     const token = this._newTimelineToken();
     if (!token) return;
+    const comparisonFocused = this.shadowRoot.activeElement?.id === 'tl-compare-btn';
     const stats = this.automationStats.get(entityId);
     const automationId = stats?.automationId || entityId.replace('automation.', '');
     this._timelineCompareLoading = true;
     this._timelineComparison = null;
     this.render();
+    if (comparisonFocused) this.shadowRoot.getElementById('tl-comparison-result')?.focus({ preventScroll: true });
     try {
       const baseline = await _aaRequestFullTrace({
         hass: token.hass,
@@ -3310,9 +3312,12 @@ class HAAutomationAnalyzer extends HTMLElement {
 
   _renderTimelineComparison() {
     const comparison = this._timelineComparison;
+    if (this._timelineCompareLoading) {
+      return `<div id="tl-comparison-result" class="tl-comparison" role="status" tabindex="-1">${_esc(this._t.timelineComparing)}</div>`;
+    }
     if (!comparison) return '';
     if (comparison.status !== 'available') {
-      return `<div class="tl-inline-err">${_esc(this._timelineMessage(comparison.status))}</div>`;
+      return `<div id="tl-comparison-result" class="tl-inline-err" role="status" tabindex="-1">${_esc(this._timelineMessage(comparison.status))}</div>`;
     }
     const run = comparison.data.run;
     const later = comparison.data.nodes.reached_later.length;
@@ -3330,7 +3335,7 @@ class HAAutomationAnalyzer extends HTMLElement {
       added ? `${added} ${this._lang === 'pl' ? 'dodanych kroków' : 'steps added'}` : '',
       removed ? `${removed} ${this._lang === 'pl' ? 'usuniętych kroków' : 'steps removed'}` : ''
     ].filter(Boolean);
-    return `<div class="tl-comparison" role="status">
+    return `<div id="tl-comparison-result" class="tl-comparison" role="status" tabindex="-1">
       <strong>${_esc(runLabel)}</strong>${run.delta_ms === null ? '' : ` (${run.delta_ms > 0 ? '+' : ''}${run.delta_ms}ms)`}
       ${details.length ? `<div>${details.map(_esc).join(' · ')}</div>` : ''}
     </div>`;
@@ -3502,6 +3507,7 @@ class HAAutomationAnalyzer extends HTMLElement {
   render() {
     if (!this._hass || !this.isConnected) return;
     const focusedControl = this.shadowRoot.activeElement;
+    const comparisonFocus = focusedControl?.id === 'tl-comparison-result';
     const navigationFocus = focusedControl?.matches('.tab-btn,#aa-tab-picker');
     const paginationFocus = focusedControl?.matches('.pagination-btn,.page-size-select') ? {
       tab: focusedControl.dataset.pageTab, direction: focusedControl.dataset.pageDirection
@@ -4627,6 +4633,7 @@ ${_AA_CONTROL_CSS}
     this._setupEventListeners();
     this._setupPaginationListeners();
     this._setupChartControlsV3();
+    if (comparisonFocus) this.shadowRoot.getElementById('tl-comparison-result')?.focus({ preventScroll: true });
     if (chartFocus) {
       const section = Array.from(this.shadowRoot.querySelectorAll('[data-aa-chart]')).find(node => node.dataset.aaChart === chartFocus.key);
       const control = Array.from(section?.querySelectorAll('[data-aa-chart-control]') || []).find(node => node.dataset.aaChartControl === chartFocus.control);
@@ -5157,6 +5164,13 @@ class HaAutomationAnalyzerEditor extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._config = {};
+    this._lang = (navigator.language || '').startsWith('pl') ? 'pl' : 'en';
+  }
+  set hass(hass) {
+    const language = String(hass?.language || hass?.locale?.language || 'en').startsWith('pl') ? 'pl' : 'en';
+    if (language === this._lang) return;
+    this._lang = language;
+    this._render();
   }
   setConfig(config) {
     const safeConfig = config && typeof config === 'object' ? config : {};
@@ -5172,6 +5186,12 @@ class HaAutomationAnalyzerEditor extends HTMLElement {
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config }, bubbles: true, composed: true }));
   }
   _render() {
+    const pl = this._lang === 'pl';
+    const labels = {
+      title: pl ? 'Tytuł' : 'Title',
+      refresh: pl ? 'Automatycznie odświeżaj kartę po zmianie stanów Home Assistanta' : 'Automatically refresh this card when Home Assistant state changes',
+      disabled: pl ? 'Uwzględniaj wyłączone automatyzacje w analizie' : 'Include disabled automations in the analysis'
+    };
     const title = this.shadowRoot.querySelector('#cf_title');
     const value = this._config.title ?? 'Automation Analyzer';
     if (title) {
@@ -5179,6 +5199,9 @@ class HaAutomationAnalyzerEditor extends HTMLElement {
       if (title.value !== value) title.value = value;
       this.shadowRoot.querySelector('#cf_auto_refresh').checked = this._config.auto_refresh !== false;
       this.shadowRoot.querySelector('#cf_show_disabled').checked = this._config.show_disabled !== false;
+      this.shadowRoot.querySelector('label[for="cf_title"]').textContent = labels.title;
+      this.shadowRoot.querySelector('#cf_refresh_label').textContent = labels.refresh;
+      this.shadowRoot.querySelector('#cf_disabled_label').textContent = labels.disabled;
       return;
     }
     this.shadowRoot.innerHTML = `
@@ -5190,17 +5213,17 @@ class HaAutomationAnalyzerEditor extends HTMLElement {
         </style>
       <h3>Automation Analyzer</h3>
             <div style="margin-bottom:12px;">
-              <label for="cf_title" style="display:block;font-weight:500;margin-bottom:4px;font-size:13px;">Title</label>
+              <label for="cf_title" style="display:block;font-weight:500;margin-bottom:4px;font-size:13px;">${labels.title}</label>
               <input type="text" id="cf_title" value="${_esc(value)}"
                 style="width:100%;padding:8px 12px;border:1px solid var(--divider-color,#e2e8f0);border-radius:8px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#1e293b);font-size:14px;box-sizing:border-box;">
             </div>
             <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.4;">
               <input type="checkbox" id="cf_auto_refresh" ${this._config?.auto_refresh === false ? '' : 'checked'}>
-              <span>Automatically refresh this card when Home Assistant state changes</span>
+              <span id="cf_refresh_label">${labels.refresh}</span>
             </label>
             <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.4;margin-top:10px;">
               <input type="checkbox" id="cf_show_disabled" ${this._config?.show_disabled === false ? '' : 'checked'}>
-              <span>Include disabled automations in the analysis</span>
+              <span id="cf_disabled_label">${labels.disabled}</span>
             </label>
     `;
         const f_title = this.shadowRoot.querySelector('#cf_title');
