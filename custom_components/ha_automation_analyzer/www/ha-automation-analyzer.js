@@ -3509,6 +3509,8 @@ class HAAutomationAnalyzer extends HTMLElement {
     if (!this._hass || !this.isConnected) return;
     const focusedControl = this.shadowRoot.activeElement;
     const comparisonFocus = focusedControl?.id === 'tl-comparison-result';
+    const timelineFocus = focusedControl?.matches('#tl-auto-select,#tl-run-select,#tl-baseline-select,#tl-runs-prev,#tl-runs-next')
+      ? focusedControl.id : null;
     const navigationFocus = focusedControl?.matches('.tab-btn,#aa-tab-picker');
     const paginationFocus = focusedControl?.matches('.pagination-btn,.page-size-select') ? {
       tab: focusedControl.dataset.pageTab, direction: focusedControl.dataset.pageDirection
@@ -4635,6 +4637,16 @@ ${_AA_CONTROL_CSS}
     this._setupPaginationListeners();
     this._setupChartControlsV3();
     if (comparisonFocus) this.shadowRoot.getElementById('tl-comparison-result')?.focus({ preventScroll: true });
+    if (timelineFocus) {
+      // Read the current focus on every render, including completion of an async request.
+      const replacement = this.shadowRoot.getElementById(timelineFocus);
+      const fallbackId = timelineFocus === 'tl-runs-prev' ? 'tl-runs-next'
+        : timelineFocus === 'tl-runs-next' ? 'tl-runs-prev' : null;
+      const fallback = fallbackId && this.shadowRoot.getElementById(fallbackId);
+      const target = replacement && !replacement.disabled ? replacement
+        : fallback && !fallback.disabled ? fallback : null;
+      target?.focus({ preventScroll: true });
+    }
     if (chartFocus) {
       const section = Array.from(this.shadowRoot.querySelectorAll('[data-aa-chart]')).find(node => node.dataset.aaChart === chartFocus.key);
       const control = Array.from(section?.querySelectorAll('[data-aa-chart-control]') || []).find(node => node.dataset.aaChartControl === chartFocus.control);
