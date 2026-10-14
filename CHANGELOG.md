@@ -7,6 +7,7 @@
 - Preview the complete redacted diagnostic JSON before saving. Save As confirms only after an exact file readback; cancellation and uncertain results remain Unconfirmed without automatic retries.
 - Preserve unknown YAML options in the visual editor while editing supported settings.
 - Follow Polish and English in the visual editor without replacing the active field, and keep keyboard focus on pending and completed Timeline comparisons.
+- Cancel pending comparisons when selecting another run, baseline or page; discard late results and keep the next comparison available.
 - Improve Timeline status and offset contrast in light and dark themes.
 
 ## 5.0.1 (2026-10-09)

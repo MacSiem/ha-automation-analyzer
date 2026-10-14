@@ -2803,6 +2803,7 @@ class HAAutomationAnalyzer extends HTMLElement {
     const token = this._activeTimelineToken;
     if (token?.controller && !token.controller.signal.aborted) token.controller.abort();
     this._activeTimelineToken = null;
+    this._timelineCompareLoading = false;
   }
 
   _timelineMessage(status) {
@@ -4828,6 +4829,7 @@ ${_AA_CONTROL_CSS}
     const compareButton = this.shadowRoot.getElementById('tl-compare-btn');
     if (baselineSelect) {
       baselineSelect.addEventListener('change', event => {
+        if (this._timelineCompareLoading) this._abortTimelinePipeline();
         this._timelineBaselineRunId = event.target.value || null;
         this._timelineBaselineData = null;
         this._timelineComparison = null;
@@ -4841,6 +4843,7 @@ ${_AA_CONTROL_CSS}
       const button = this.shadowRoot.getElementById(id);
       if (button && !button.disabled) {
         button.addEventListener('click', () => {
+          if (this._timelineCompareLoading) this._abortTimelinePipeline();
           this._timelinePageCursor = button.dataset.cursor || null;
           this._timelineBaselineRunId = null;
           this._timelineBaselineData = null;
