@@ -115,3 +115,102 @@ test('connection notifications do not depend on DOM Event payloads', async t => 
   assert.equal(field(f, 'preview').textContent, '');
   f.card.remove(); assert.equal(callbacks.size, 0); assert.equal(f.handoffs.length, 0);
 });
+
+function nativeRequest(f) {
+  const payload = f.card._diagnosticPayloadV3();
+  assert.equal(payload.confirmed, true);
+  const controller = new AbortController();
+  return { controller, request: { blob: new Blob([payload.serialized]), filename: 'reviewed-diagnostic.json',
+    context: f.card._diagnosticContextV3(), signal: controller.signal } };
+}
+function nativeHandle(f, request, { step = () => {}, name = request.filename, corrupt = false } = {}) {
+  let written;
+  f.shell.window.showSaveFilePicker = async options => {
+    assert.equal(options.suggestedName, request.filename);
+    assert.deepEqual(Object.keys(options.types[0].accept), ['application/json']);
+    await step('picker');
+    return { name, createWritable: async () => {
+      await step('create');
+      return { write: async blob => { assert.equal(blob, request.blob); written = blob; await step('write'); },
+        close: async () => { await step('close'); }, abort: async () => { await step('abort'); } };
+    }, getFile: async () => {
+      await step('getFile');
+      return { arrayBuffer: async () => {
+        const bytes = await (corrupt ? new Blob(['wrong bytes']) : written).arrayBuffer();
+        await step('readback'); return bytes;
+      } };
+    } };
+  };
+}
+
+test('native Save uses exact confirmed preview and reports saved only after close and byte readback', async t => {
+  const f = await fixture(t); await open(f);
+  const bytes = field(f, 'preview').textContent, steps = []; let written;
+  f.shell.window.showSaveFilePicker = async options => {
+    steps.push('picker'); assert.equal(options.suggestedName, field(f, 'filename').value);
+    return { name: options.suggestedName, createWritable: async () => ({
+      write: async blob => { steps.push('write'); written = await blob.text(); },
+      close: async () => { steps.push('close'); }, abort: async () => { steps.push('abort'); }
+    }), getFile: async () => { steps.push('readback'); return new Blob([written]); } };
+  };
+  const before = f.hass.__calls.length;
+  field(f, 'save').click();
+  await waitFor(() => /Save confirmed/.test(field(f, 'message')?.textContent || ''), 'native confirmation');
+  field(f, 'save').click(); await flushTurns();
+  assert.equal(written, bytes); assert.deepEqual(steps, ['picker', 'write', 'close', 'readback']);
+  assert.equal(f.handoffs.length, 0); assert.equal(f.hass.__calls.length, before);
+});
+
+for (const loss of ['abort', 'role', 'source']) {
+  for (const phase of ['before', 'picker', 'create', 'write', 'close', 'getFile', 'readback']) {
+    test(`${loss} at ${phase} fences native save without fallback or later writes`, async t => {
+      const f = await fixture(t), { request, controller } = nativeRequest(f), steps = [];
+      const invalidate = () => {
+        if (loss === 'abort') controller.abort();
+        if (loss === 'role') f.card._hass = { ...f.hass, user: { ...f.hass.user, is_admin: false } };
+        if (loss === 'source') f.card._timelineSelectedRunId = 'different-source';
+      };
+      nativeHandle(f, request, { step: stage => { steps.push(stage); if (stage === phase) invalidate(); } });
+      if (phase === 'before') invalidate();
+      const result = await f.card._downloadDiagnosticV3(request);
+      assert.equal(result.outcome, 'unknown'); assert.equal(f.handoffs.length, 0);
+      const expected = { before: [], picker: ['picker'], create: ['picker', 'create', 'abort'],
+        write: ['picker', 'create', 'write', 'abort'], close: ['picker', 'create', 'write', 'close'],
+        getFile: ['picker', 'create', 'write', 'close', 'getFile'],
+        readback: ['picker', 'create', 'write', 'close', 'getFile', 'readback'] };
+      assert.deepEqual(steps, expected[phase]);
+    });
+  }
+}
+
+for (const failure of ['cancel', 'renamed', 'write-error', 'close-error', 'readback-error', 'corrupt']) {
+  test(`${failure} consumes the native attempt without anchor fallback`, async t => {
+    const f = await fixture(t), { request } = nativeRequest(f), steps = [];
+    nativeHandle(f, request, { name: failure === 'renamed' ? 'other.json' : request.filename,
+      corrupt: failure === 'corrupt', step: stage => {
+        steps.push(stage);
+        if ((failure === 'cancel' && stage === 'picker') || failure === stage + '-error') throw Error('controlled ' + failure);
+      } });
+    const result = await f.card._downloadDiagnosticV3(request);
+    assert.equal(result.outcome, 'unknown'); assert.equal(f.handoffs.length, 0);
+    if (['cancel', 'renamed'].includes(failure)) assert.deepEqual(steps, ['picker']);
+  });
+}
+
+test('cancel while the picker is pending prohibits writing or a second intent on reopen', async t => {
+  const f = await fixture(t); await open(f); let resolvePicker, picks = 0, writes = 0;
+  f.shell.window.showSaveFilePicker = () => {
+    picks++; return new Promise(resolve => { resolvePicker = resolve; });
+  };
+  field(f, 'save').click(); field(f, 'cancel').click(); await openPending();
+  async function openPending() {
+    f.card.shadowRoot.querySelector('#tl-export-btn').click(); await flushTurns();
+    assert.equal(field(f, 'save').disabled, true); field(f, 'save').click();
+  }
+  resolvePicker({ name: 'ha-automation-analyzer-diagnostic.json', createWritable: async () => {
+    writes++; throw Error('Cancelled intent must not create a writable');
+  } });
+  await flushTurns();
+  assert.equal(picks, 1); assert.equal(writes, 0); assert.equal(f.handoffs.length, 0);
+  assert.equal(field(f, 'save').disabled, true);
+});
