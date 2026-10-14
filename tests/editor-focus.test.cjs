@@ -25,6 +25,27 @@ for (const source of [
     return { dom, editor, root, title: root.querySelector('#cf_title'), config };
   }
 
+  test(`${source}: language updates labels without replacing the active input or changing config`, () => {
+    const f = fixture();
+    try {
+      let events = 0;
+      f.editor.addEventListener('config-changed', () => events++);
+      f.title.focus(); f.title.setSelectionRange(1, 4, 'backward');
+      f.editor.hass = { language: 'pl-PL' };
+      assert.equal(f.title.labels[0].textContent.trim(), 'Tytuł');
+      assert.match(f.root.querySelector('#cf_auto_refresh').labels[0].textContent, /Automatycznie odświeżaj/);
+      assert.match(f.root.querySelector('#cf_show_disabled').labels[0].textContent, /Uwzględniaj wyłączone/);
+      assert.equal(f.root.activeElement, f.title);
+      assert.equal(f.title.selectionStart, 1); assert.equal(f.title.selectionEnd, 4);
+      assert.equal(f.title.selectionDirection, 'backward');
+      f.editor.hass = { language: 'en' };
+      assert.equal(f.title.labels[0].textContent.trim(), 'Title');
+      assert.equal(f.root.activeElement, f.title);
+      assert.equal(events, 0);
+      assert.deepEqual(JSON.parse(JSON.stringify(f.editor._config.future_setting)), { enabled: true, names: ['retained'] });
+    } finally { f.dom.window.close(); }
+  });
+
   // Replacing innerHTML during the real input callback detaches the active node;
   // writing an equal value again can also reset selection in the native input.
   for (const selection of [
