@@ -1,5 +1,13 @@
 # Changelog — Automation Analyzer
 
+## 5.1.0 (2026-10-14)
+
+- Make primary actions and tabs at least 44px high, preserve keyboard focus across updates, and keep narrow cards within Home Assistant Sections.
+- Show retained-run charts and their data from one snapshot, with source, read time, time zone and explicit missing-data states. Chart navigation supports keyboard selection.
+- Preview the complete redacted diagnostic JSON before saving. Save As confirms only after an exact file readback; cancellation and uncertain results remain Unconfirmed without automatic retries.
+- Preserve unknown YAML options in the visual editor while editing supported settings.
+- Improve Timeline status and offset contrast in light and dark themes.
+
 ## 5.0.1 (2026-10-09)
 
 - Restrict configuration enrichment to confirmed administrators and retain only counts, trigger categories and automation identifiers; discard raw payloads and clear cached metadata on disconnect.

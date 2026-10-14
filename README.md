@@ -67,7 +67,7 @@ For the standalone Dashboard package:
 2. Add `https://github.com/MacSiem/ha-automation-analyzer` as category **Dashboard**.
 3. Install **HA Automation Analyzer** and reload your browser.
 
-Version 5.0.1 also includes an optional integration. For a manual installation,
+Version 5.1.0 also includes an optional integration. For a manual installation,
 copy `custom_components/ha_automation_analyzer` from the release archive into
 `<config>/custom_components/`, restart Home Assistant, and add **Automation Analyzer**
 under Settings → Devices & services. It serves the same card and registers a
@@ -131,8 +131,15 @@ Only a new allowlisted diagnostic structure: relative step offsets, normalized
 statuses, run duration and an optional comparison. It excludes automation config,
 triggers, variables, context, absolute timestamps, friendly names and Home
 Assistant entity/device/area/user identifiers. Run identifiers are replaced with
-local sequential aliases. The file is created locally in the browser and is not
-uploaded.
+local sequential aliases. Before saving, the dialog shows the complete frozen
+JSON, filename, source, retained range and fields. Refresh creates a new preview;
+Save uses exactly the reviewed bytes.
+
+When supported, the browser opens Save As. The card confirms a save only after
+closing the file and reading back matching bytes. Cancelling, losing access or
+an uncertain result shows Unconfirmed and never automatically retries. Browsers
+without Save As start a download and report only that it was initiated. The file
+is created locally and is not uploaded.
 
 **Does this send data anywhere?**
 No telemetry and no external runtime requests — analysis runs inside your Home
