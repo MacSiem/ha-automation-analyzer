@@ -12,7 +12,13 @@ async function fixture(t, count = 2) {
   older.timestamp = { start: '2026-08-31T07:00:00.000Z', finish: '2026-08-31T07:00:00.120Z' };
   for (const values of Object.values(older.trace)) for (const item of values)
     item.timestamp = item.timestamp.replace('08:00:00', '07:00:00');
-  const extra = Array.from({ length: count - 2 }, (_, i) => ({ ...structuredClone(older), run_id: 'old-'+i }));
+  const extra = Array.from({ length: count - 2 }, (_, i) => {
+    const trace = structuredClone(older); trace.run_id = 'old-'+i;
+    trace.timestamp = { start: '2026-08-31T06:00:00.000Z', finish: '2026-08-31T06:00:00.120Z' };
+    for (const values of Object.values(trace.trace)) for (const item of values)
+      item.timestamp = item.timestamp.replace('07:00:00', '06:00:00');
+    return trace;
+  });
   const hass = createHassFixture({ label: 'focus', traces: [older, newer, ...extra] });
   const card = shell.mount(hass, { auto_refresh: false, show_support: false });
   await waitFor(() => !card._loadingInProgress && card.automationStats.size === 1, 'base');
@@ -56,6 +62,7 @@ test('a completed comparison does not reclaim focus after the user moves elsewhe
 test('changing the selected run cancels pending comparison and allows a new comparison', async t => {
   const f = await fixture(t), root = f.card.shadowRoot;
   root.querySelector('#tl-compare-btn').click(); await flushTurns();
+  assert.equal(f.card._timelineCompareLoading, true, 'a real comparison is pending');
   const select = root.querySelector('#tl-run-select'); select.value = 'older';
   select.dispatchEvent(new f.shell.window.Event('change', { bubbles: true }));
   f.gate.resolve({ domain: 'automation', ...f.older });
@@ -74,6 +81,7 @@ for (const selection of ['baseline', 'page']) {
   test(`changing ${selection} discards the late result of a pending comparison`, async t => {
     const f = await fixture(t, selection === 'page' ? 25 : 2), root = f.card.shadowRoot;
     root.querySelector('#tl-compare-btn').click(); await flushTurns();
+    assert.equal(f.card._timelineCompareLoading, true, 'a real comparison is pending');
     if (selection === 'baseline') {
       const select = root.querySelector('#tl-baseline-select'); select.value = '';
       select.dispatchEvent(new f.shell.window.Event('change', { bubbles: true }));
