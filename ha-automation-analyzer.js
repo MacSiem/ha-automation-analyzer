@@ -3018,6 +3018,50 @@ class HAAutomationAnalyzer extends HTMLElement {
     return { serialized: JSON.stringify(payload, null, 2) + '\n', status, confirmed: true, sourceConfirmed: true, included, excluded, sourceLimit };
   }
 
+  async _downloadDiagnosticV3({ blob, filename, context, signal }) {
+    const currentIntent = () => {
+      const current = this._diagnosticContextV3();
+      return !signal.aborted && current.connected && current.canExport && current.sourceConfirmed
+        && ['role', 'userId', 'connectionId', 'datasetId', 'revision'].every(key => context[key] === current[key]);
+    };
+    if (!currentIntent()) return { outcome: 'unknown' };
+    const view = this.ownerDocument.defaultView;
+    if (typeof view.showSaveFilePicker === 'function') {
+      let writable;
+      try {
+        // Keep the picker in the explicit Save gesture, before any await.
+        const handle = await view.showSaveFilePicker({ suggestedName: filename,
+          types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }] });
+        if (!currentIntent() || handle.name.normalize('NFC') !== filename.normalize('NFC')) return { outcome: 'unknown' };
+        writable = await handle.createWritable();
+        if (!currentIntent()) { await writable.abort(); writable = null; return { outcome: 'unknown' }; }
+        await writable.write(blob);
+        if (!currentIntent()) { await writable.abort(); writable = null; return { outcome: 'unknown' }; }
+        await writable.close(); writable = null;
+        if (!currentIntent()) return { outcome: 'unknown' };
+        const file = await handle.getFile();
+        if (!currentIntent()) return { outcome: 'unknown' };
+        const [expected, actual] = await Promise.all([blob.arrayBuffer(), file.arrayBuffer()]);
+        if (!currentIntent()) return { outcome: 'unknown' };
+        const left = new Uint8Array(expected), right = new Uint8Array(actual);
+        if (left.length !== right.length || !left.every((byte, i) => byte === right[i])) return { outcome: 'unknown' };
+        return { outcome: 'saved' };
+      } catch {
+        if (writable) { try { await writable.abort(); } catch {} }
+        // Cancel/error/uncertain persistence consumes this intent; never fallback.
+        return { outcome: 'unknown' };
+      }
+    }
+    const url = URL.createObjectURL(blob), anchor = this.ownerDocument.createElement('a');
+    anchor.href = url; anchor.download = filename; anchor.rel = 'noopener'; anchor.hidden = true;
+    try {
+      if (!currentIntent()) return { outcome: 'unknown' };
+      this.ownerDocument.body.append(anchor); anchor.click();
+      // The browser confirms only initiation, never filesystem persistence.
+      return { outcome: 'initiated' };
+    } finally { anchor.remove(); view.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  }
+
   _exportTimelineDiagnostic() {
     if (!this._diagnosticDialogV3) this._diagnosticDialogV3 = createExportDialog({
       root: this.shadowRoot, getLanguage: () => this._lang, getContext: () => this._diagnosticContextV3(), createUiV3,
@@ -3026,15 +3070,7 @@ class HAAutomationAnalyzer extends HTMLElement {
         neverInclude: ['tokens', 'users', 'addresses', 'raw_config', 'run_id', 'item_id', 'names', 'variables', 'messages'] },
       formats: ['json'], defaultFormat: 'json', defaultFilename: 'ha-automation-analyzer-diagnostic.json',
       buildPayload: () => this._diagnosticPayloadV3(),
-      performDownload: ({ blob, filename, context, signal }) => {
-        const current = this._diagnosticContextV3();
-        if (signal.aborted || !current.connected || !current.canExport || !current.sourceConfirmed
-          || ['role', 'userId', 'connectionId', 'datasetId', 'revision'].some(key => context[key] !== current[key])) return { outcome: 'unknown' };
-        const url = URL.createObjectURL(blob), anchor = this.ownerDocument.createElement('a');
-        anchor.href = url; anchor.download = filename; anchor.rel = 'noopener';
-        try { anchor.click(); } finally { URL.revokeObjectURL(url); }
-        return { outcome: 'initiated' };
-      }
+      performDownload: request => this._downloadDiagnosticV3(request)
     });
     const owner = this;
     this._diagnosticDialogV3.open({ opener: {
