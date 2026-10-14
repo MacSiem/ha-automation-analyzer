@@ -1302,7 +1302,7 @@ test('card editor and README expose the local boolean auto_refresh and accurate 
   assert.ok(showDisabledCheckbox);
   assert.equal(autoRefreshCheckbox.checked, false);
   assert.equal(showDisabledCheckbox.checked, false);
-  assert.equal(Object.hasOwn(editor._config, 'unknown_private_option'), false);
+  assert.equal(editor._config.unknown_private_option, 'PRIVATE_MESSAGE', 'opening the visual editor preserves unrecognized YAML options');
   let changed = null;
   editor.addEventListener('config-changed', event => { changed = event.detail.config; });
   autoRefreshCheckbox.checked = true;
@@ -1313,7 +1313,7 @@ test('card editor and README expose the local boolean auto_refresh and accurate 
   showDisabledCheckbox.dispatchEvent(new shell.window.Event('change', { bubbles: true }));
   assert.equal(changed.show_disabled, true);
   assert.equal(typeof changed.show_disabled, 'boolean');
-  assert.equal(Object.hasOwn(changed, 'unknown_private_option'), false);
+  assert.equal(changed.unknown_private_option, 'PRIVATE_MESSAGE', 'changing a known field preserves unrecognized YAML options');
 
   const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
   assert.match(readme, /administrator only|admin-only/i);
