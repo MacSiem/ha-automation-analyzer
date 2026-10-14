@@ -2,7 +2,7 @@
   "schema_version": 2,
   "source": {
     "path": "ha-automation-analyzer.js",
-    "sha256": "01b3395516e86f122bae5e82d3e0accad353f62d5095618749bf665b043b63a3"
+    "sha256": "b668e31d3886ff719cd8822f9b6367c6bb6ff0226cc5144860bddf8b18969d5d"
   },
   "fixture": {
     "seed": "aa-demo-v1",
@@ -22,7 +22,7 @@
       "viewport": "desktop",
       "pixel_width": 480,
       "pixel_height": 1718,
-      "source_sha256": "01b3395516e86f122bae5e82d3e0accad353f62d5095618749bf665b043b63a3",
+      "source_sha256": "b668e31d3886ff719cd8822f9b6367c6bb6ff0226cc5144860bddf8b18969d5d",
       "image_sha256": "225bf5504e9ea8708d96d13a9c77545396afd107918f60f53ee33d3362e519cd",
       "render_sha256_samples": [
         "225bf5504e9ea8708d96d13a9c77545396afd107918f60f53ee33d3362e519cd",
@@ -46,11 +46,11 @@
       "viewport": "desktop",
       "pixel_width": 480,
       "pixel_height": 1718,
-      "source_sha256": "01b3395516e86f122bae5e82d3e0accad353f62d5095618749bf665b043b63a3",
-      "image_sha256": "a4d3c6d8c27e9475b21b3ed4bd681bc03047516271dd38cc05da53625c894aac",
+      "source_sha256": "b668e31d3886ff719cd8822f9b6367c6bb6ff0226cc5144860bddf8b18969d5d",
+      "image_sha256": "ad64b03c592ed3e481862b5ee2bdc7a2b3fd755ace8b13041217d230d7984e97",
       "render_sha256_samples": [
-        "a4d3c6d8c27e9475b21b3ed4bd681bc03047516271dd38cc05da53625c894aac",
-        "a4d3c6d8c27e9475b21b3ed4bd681bc03047516271dd38cc05da53625c894aac"
+        "ad64b03c592ed3e481862b5ee2bdc7a2b3fd755ace8b13041217d230d7984e97",
+        "ad64b03c592ed3e481862b5ee2bdc7a2b3fd755ace8b13041217d230d7984e97"
       ],
       "layout": {
         "horizontal_overflow": false,
@@ -70,11 +70,11 @@
       "viewport": "narrow",
       "pixel_width": 360,
       "pixel_height": 1887,
-      "source_sha256": "01b3395516e86f122bae5e82d3e0accad353f62d5095618749bf665b043b63a3",
-      "image_sha256": "3feabb9995f17d07c6bb577939db4f6517559286419042aa941932c0444841bd",
+      "source_sha256": "b668e31d3886ff719cd8822f9b6367c6bb6ff0226cc5144860bddf8b18969d5d",
+      "image_sha256": "26296d827930b39a99c54ec2bdc1d1c4380c69b157d4b2d6d7371bf74d1714ef",
       "render_sha256_samples": [
-        "3feabb9995f17d07c6bb577939db4f6517559286419042aa941932c0444841bd",
-        "3feabb9995f17d07c6bb577939db4f6517559286419042aa941932c0444841bd"
+        "26296d827930b39a99c54ec2bdc1d1c4380c69b157d4b2d6d7371bf74d1714ef",
+        "26296d827930b39a99c54ec2bdc1d1c4380c69b157d4b2d6d7371bf74d1714ef"
       ],
       "layout": {
         "horizontal_overflow": false,
