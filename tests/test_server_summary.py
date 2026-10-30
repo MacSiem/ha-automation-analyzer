@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import importlib.util
 from pathlib import Path
 import unittest
@@ -49,6 +50,58 @@ class SummaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             summary.summarize_traces([{}] * (summary.MAX_RUNS + 1), now, "Europe/Warsaw")
 
+
+    def test_fall_back_fold_records_three_seconds_not_negative_wall_time(self) -> None:
+        zone = ZoneInfo("Europe/Warsaw")
+        start = datetime(2026, 10, 25, 2, 59, 58, tzinfo=zone, fold=0)
+        finish = datetime(2026, 10, 25, 2, 0, 1, tzinfo=zone, fold=1)
+        # Independent oracle: 00:59:58 UTC -> 01:00:01 UTC = 3000 ms.
+        self.assertEqual((finish.astimezone(timezone.utc) -
+                          start.astimezone(timezone.utc)).total_seconds(), 3)
+        result = summary.summarize_traces([
+            {"domain": "automation", "item_id": "dst", "script_execution": "finished",
+             "timestamp": {"start": start, "finish": finish}}],
+            datetime(2026, 10, 25, 12, tzinfo=zone), "Europe/Warsaw")
+        self.assertEqual(result["execution_count"], 1)
+        self.assertEqual(result["durations_ms"], [3000])
+        self.assertEqual(result["by_automation"]["dst"]["avg_execution_ms"], 3000)
+        self.assertEqual(result["daily_counts"][-1]["count"], 1)
+
+    def test_spring_forward_fold_gives_real_three_second_duration(self) -> None:
+        zone = ZoneInfo("Europe/Warsaw")
+        start = datetime(2026, 3, 29, 1, 59, 59, tzinfo=zone)
+        finish = datetime(2026, 3, 29, 3, 0, 2, tzinfo=zone)
+        self.assertEqual((finish.astimezone(timezone.utc) -
+                          start.astimezone(timezone.utc)).total_seconds(), 3)
+        result = summary.summarize_traces([
+            {"domain": "automation", "item_id": "spring",
+             "timestamp": {"start": start, "finish": finish}}],
+            datetime(2026, 3, 29, 12, tzinfo=zone), "Europe/Warsaw")
+        self.assertEqual(result["durations_ms"], [3000])
+
+    def test_fall_back_wall_forward_but_utc_backward_is_invalid(self) -> None:
+        zone = ZoneInfo("Europe/Warsaw")
+        start = datetime(2026, 10, 25, 2, 0, 1, tzinfo=zone, fold=1)
+        finish = datetime(2026, 10, 25, 2, 59, 58, tzinfo=zone, fold=0)
+        self.assertLess((finish.astimezone(timezone.utc) -
+                         start.astimezone(timezone.utc)).total_seconds(), 0)
+        with self.assertRaisesRegex(ValueError, "invalid_trace_duration"):
+            summary.summarize_traces([
+                {"domain": "automation", "item_id": "reverse",
+                 "timestamp": {"start": start, "finish": finish}}],
+                datetime(2026, 10, 25, 12, tzinfo=zone), "Europe/Warsaw")
+
+
+    def test_running_trace_does_not_invent_zero_duration(self) -> None:
+        zone = ZoneInfo("Europe/Warsaw")
+        result = summary.summarize_traces([
+            {"domain": "automation", "item_id": "running", "script_execution": "running",
+             "timestamp": {"start": datetime(2026, 10, 29, 10, 0, tzinfo=zone),
+                           "finish": None}}],
+            datetime(2026, 10, 29, 11, tzinfo=zone), "Europe/Warsaw")
+        self.assertEqual(result["execution_count"], 1)
+        self.assertEqual(result["durations_ms"], [])
+        self.assertIsNone(result["by_automation"]["running"]["avg_execution_ms"])
 
 if __name__ == "__main__":
     unittest.main()

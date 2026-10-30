@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -46,8 +46,13 @@ def summarize_traces(rows: list[dict[str, Any]], now: datetime, time_zone: str) 
         timestamp = row.get("timestamp")
         if not isinstance(timestamp, dict):
             raise ValueError("invalid_trace_timestamp")
-        start = _timestamp(timestamp.get("start"))
-        finish = _timestamp(timestamp["finish"]) if timestamp.get("finish") is not None else None
+        # Normalize before comparing/subtracting. Python compares two datetimes
+        # with the same ZoneInfo by wall clock and ignores their DST fold.
+        start = _timestamp(timestamp.get("start")).astimezone(timezone.utc)
+        finish = (
+            _timestamp(timestamp["finish"]).astimezone(timezone.utc)
+            if timestamp.get("finish") is not None else None
+        )
         if finish is not None and finish < start:
             raise ValueError("invalid_trace_duration")
         if row.get("not_triggered") is True:
