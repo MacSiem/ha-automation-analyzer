@@ -1,5 +1,11 @@
 # Changelog — Automation Analyzer
 
+## 5.1.1 (2026-10-30)
+
+- Measure automation run times correctly across daylight-saving changes. When clocks went back, 5.1.0 failed the whole trace summary; when they went forward, a 3-second run counted as about an hour and was left out. A finish before its start in real time is still rejected.
+- Send trace statistics only while the requesting administrator is still active and has the same session. A user deactivated, demoted or replaced during the read receives "Administrator required"; unexpected trace-source errors return a generic message without backend details.
+- Keep the complete card and integration bundles identical.
+
 ## 5.1.0 (2026-10-14)
 
 - Make primary actions and tabs at least 44px high, preserve keyboard focus across updates, and keep narrow cards within Home Assistant Sections.

@@ -1,17 +1,17 @@
 {
-  "at": "2026-10-04T05:18:21.802647+00:00",
-  "scope": "Literal version in first non-executable comment only; manifest and cache const already5.0.1. No new pixel rendering/native acceptance.",
+  "at": "2026-10-30T10:40:02.983768+00:00",
+  "scope": "Literal version in first non-executable comment only (5.1.0 -> 5.1.1); manifest and const 5.1.1. No new pixel rendering/native acceptance.",
   "source_binding": [
     {
       "path": "ha-automation-analyzer.js",
-      "before_sha256": "70de0ad0899b465b14b0d0f8ba33a116f8a769d99a80432551f86117534774eb",
-      "after_sha256": "fb49405441819cc48dc6558061e7d9831122922c5ada41bfe9d03e85731f2d39",
+      "before_sha256": "b668e31d3886ff719cd8822f9b6367c6bb6ff0226cc5144860bddf8b18969d5d",
+      "after_sha256": "8f8281f26da36430a553a99d485398cd5efa41a5f5a0a1e1579dae7144ff149a",
       "all_bytes_after_first_comment_line_exact": true
     },
     {
       "path": "custom_components/ha_automation_analyzer/www/ha-automation-analyzer.js",
-      "before_sha256": "70de0ad0899b465b14b0d0f8ba33a116f8a769d99a80432551f86117534774eb",
-      "after_sha256": "fb49405441819cc48dc6558061e7d9831122922c5ada41bfe9d03e85731f2d39",
+      "before_sha256": "b668e31d3886ff719cd8822f9b6367c6bb6ff0226cc5144860bddf8b18969d5d",
+      "after_sha256": "8f8281f26da36430a553a99d485398cd5efa41a5f5a0a1e1579dae7144ff149a",
       "all_bytes_after_first_comment_line_exact": true
     }
   ],
